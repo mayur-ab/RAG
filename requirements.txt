@@ -1,0 +1,18 @@
+fastapi>=0.100.0
+uvicorn>=0.22.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+httpx>=0.24.0
+numpy>=1.24.0
+python-docx>=1.0.0
+openpyxl>=3.1.0
+xlrd>=2.0.1
+pypdf>=3.10.0
+rank-bm25>=0.2.2
+pytest>=7.3.0
+python-dotenv>=1.0.0
+python-multipart>=0.0.6
+pywin32>=306; sys_platform == "win32"
+chromadb
+faiss-cpu
+sentence-transformers>=2.2.0

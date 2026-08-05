@@ -1,0 +1,74 @@
+# --- Secrets & environment ---
+.env
+.env.*
+!.env.example
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+*.egg
+
+# --- Virtual environment ---
+venv/
+.venv/
+env/
+
+# --- Testing & linting ---
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+
+# --- Vector stores (generated at runtime) ---
+my_chroma_db/
+vector_db_data/
+test_chroma_db/
+
+# --- Document libraries (local user data; not source code) ---
+Docs/
+Uploaded-Docs/
+Temp-Doc/
+
+# --- ML / embedding model caches ---
+.cache/
+models/
+*.safetensors
+sentence_transformers/
+
+# --- Logs & temp files ---
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+*.swp
+*~
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# --- IDE / editors ---
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+.cursor/
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+
+# --- Windows ---
+*.stackdump
