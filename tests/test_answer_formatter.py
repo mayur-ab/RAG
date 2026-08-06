@@ -14,7 +14,7 @@ def test_sanitize_removes_source_metadata_lines():
     cleaned = AnswerFormatter.sanitize_answer(raw)
     assert "Source:" not in cleaned
     assert "Shabda Brahma" in cleaned
-    assert "[2]" in cleaned
+    assert "[2]" not in cleaned
 
 
 def test_sanitize_strips_bom_from_citations():
@@ -37,4 +37,4 @@ def test_sanitize_removes_trailing_sources_block():
     assert "Sources:" not in cleaned
     assert "Case Study 2" not in cleaned
     assert "Shabda Brahma" in cleaned
-    assert "[2]" in cleaned
+    assert "[2]" not in cleaned

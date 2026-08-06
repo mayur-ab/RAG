@@ -16,6 +16,9 @@ class ChunkMetadata(BaseModel):
     tags: List[str] = Field(default_factory=list, description="Categorization tags")
     version: str = Field(default="1.0", description="Document version")
     allowed_roles: List[str] = Field(default_factory=lambda: ["user", "admin"], description="RBAC allowed roles for access filtering")
+    source_path: Optional[str] = Field(default=None, description="Normalized source path for deduplication")
+    ingest_fingerprint: Optional[str] = Field(default=None, description="mtime:size fingerprint at ingest time")
+    chunking_strategy: Optional[str] = Field(default=None, description="Chunking strategy used during ingest")
     extra: Dict[str, Any] = Field(default_factory=dict, description="Additional custom metadata fields")
 
 

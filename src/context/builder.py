@@ -1,4 +1,4 @@
-from typing import List, Tuple, Dict, Any
+from typing import List, Tuple, Dict, Any, Optional
 from src.metadata.schema import Document
 
 
@@ -8,7 +8,11 @@ class ContextBuilder:
     def __init__(self, max_tokens: int = 4000):
         self.max_tokens = max_tokens
 
-    def build_context(self, retrieved_chunks: List[Tuple[Document, float]]) -> Tuple[str, List[Dict[str, Any]]]:
+    def build_context(
+        self,
+        retrieved_chunks: List[Tuple[Document, float]],
+        max_tokens: Optional[int] = None,
+    ) -> Tuple[str, List[Dict[str, Any]]]:
         seen_contents = set()
         unique_chunks: List[Document] = []
 
@@ -26,7 +30,8 @@ class ContextBuilder:
         context_blocks = []
         citations = []
         estimated_chars = 0
-        max_chars = self.max_tokens * 4  # Roughly 4 chars per token
+        budget = max_tokens if max_tokens is not None else self.max_tokens
+        max_chars = budget * 4  # Roughly 4 chars per token
 
         for idx, doc in enumerate(unique_chunks, 1):
             section_label = doc.metadata.section or doc.metadata.title or "General"

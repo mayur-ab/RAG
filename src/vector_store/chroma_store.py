@@ -1,5 +1,7 @@
 import os
 import json
+import threading
+import time
 from typing import List, Dict, Any, Optional, Tuple
 from src.metadata.schema import Document
 
@@ -8,6 +10,42 @@ try:
     CHROMA_AVAILABLE = True
 except ImportError:
     CHROMA_AVAILABLE = False
+
+_chroma_init_lock = threading.Lock()
+_chroma_clients: Dict[str, Any] = {}
+
+
+def _create_persistent_client(persist_directory: str):
+    """Thread-safe Chroma client factory (avoids SharedSystemClient races on Windows)."""
+    from chromadb.config import Settings as ChromaSettings
+
+    path = os.path.abspath(persist_directory)
+    os.makedirs(path, exist_ok=True)
+
+    with _chroma_init_lock:
+        existing = _chroma_clients.get(path)
+        if existing is not None:
+            return existing
+
+        last_error: Optional[Exception] = None
+        for attempt in range(3):
+            try:
+                client = chromadb.PersistentClient(
+                    path=path,
+                    settings=ChromaSettings(anonymized_telemetry=False, allow_reset=True),
+                )
+                _chroma_clients[path] = client
+                return client
+            except (KeyError, AttributeError, ValueError, OSError) as exc:
+                last_error = exc
+                _chroma_clients.pop(path, None)
+                time.sleep(0.3 * (attempt + 1))
+
+        raise RuntimeError(
+            f"Failed to open ChromaDB at '{path}'. "
+            "Stop other ingest/API processes and retry. "
+            f"Original error: {last_error}"
+        ) from last_error
 
 
 class ChromaVectorStore:
@@ -18,7 +56,9 @@ class ChromaVectorStore:
             raise ImportError("ChromaDB is not installed. Please install chromadb to use ChromaVectorStore.")
         if persist_directory is None:
             raise ValueError("persist_directory must be provided for ChromaVectorStore")
-        self.client = chromadb.PersistentClient(path=persist_directory)
+
+        self.persist_directory = os.path.abspath(persist_directory)
+        self.client = _create_persistent_client(self.persist_directory)
         # Use cosine similarity for consistency with memory store
         self.collection = self.client.get_or_create_collection(
             name="rag_collection",
@@ -184,6 +224,58 @@ class ChromaVectorStore:
             return len(ids_to_delete)
         return 0
 
+    def _source_lookup_variants(self, source: str) -> list[tuple[str, str]]:
+        from src.ingestion.fingerprint import normalize_source_path
+
+        normalized = normalize_source_path(source)
+        variants: list[tuple[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        for field, value in [
+            ("source_path", normalized),
+            ("source", normalized),
+            ("source", source.replace("\\", "/")),
+            ("source", source),
+        ]:
+            key = (field, value)
+            if key not in seen:
+                seen.add(key)
+                variants.append(key)
+        return variants
+
+    def get_ingest_record_by_source(self, source: str) -> Optional[Dict[str, Any]]:
+        """Return ingest metadata for an indexed source, if any."""
+        for field, value in self._source_lookup_variants(source):
+            try:
+                sample = self.collection.get(where={field: value}, include=["metadatas"], limit=1)
+                ids = sample.get("ids", [])
+                if not ids:
+                    continue
+                meta = sample["metadatas"][0]
+                all_ids = self.collection.get(where={field: value}, include=[])
+                return {
+                    "document_id": meta.get("document_id"),
+                    "ingest_fingerprint": meta.get("ingest_fingerprint") or "",
+                    "chunking_strategy": meta.get("chunking_strategy") or "",
+                    "updated_at": meta.get("updated_at") or "",
+                    "chunk_count": len(all_ids.get("ids", [])),
+                }
+            except Exception:
+                continue
+        return None
+
+    def delete_by_source(self, source: str) -> int:
+        ids_to_delete: set[str] = set()
+        for field, value in self._source_lookup_variants(source):
+            try:
+                results = self.collection.get(where={field: value}, include=[])
+                ids_to_delete.update(results.get("ids", []))
+            except Exception:
+                continue
+        if ids_to_delete:
+            self.collection.delete(ids=list(ids_to_delete))
+            return len(ids_to_delete)
+        return 0
+
     def get_stats(self) -> Dict[str, Any]:
         count = self.collection.count()
         return {
@@ -199,3 +291,26 @@ class ChromaVectorStore:
             name="rag_collection",
             metadata={"hnsw:space": "cosine"}
         )
+
+    def list_indexed_sources(self) -> List[Dict[str, Any]]:
+        if self.collection.count() == 0:
+            return []
+
+        results = self.collection.get(include=["metadatas"])
+        grouped: Dict[str, Dict[str, Any]] = {}
+        for metadata in results.get("metadatas", []):
+            source = metadata.get("source_path") or metadata.get("source") or "unknown"
+            if source not in grouped:
+                grouped[source] = {
+                    "source": source,
+                    "title": metadata.get("title") or "",
+                    "document_id": metadata.get("document_id") or "",
+                    "chunk_count": 0,
+                    "updated_at": metadata.get("updated_at") or "",
+                    "ingest_fingerprint": metadata.get("ingest_fingerprint") or "",
+                    "chunking_strategy": metadata.get("chunking_strategy") or "",
+                    "status": "indexed",
+                }
+            grouped[source]["chunk_count"] += 1
+
+        return sorted(grouped.values(), key=lambda item: item["source"].lower())

@@ -40,6 +40,7 @@ def main():
 
     evaluator = RAGEvaluator()
     print("=== Running RAG Evaluation Benchmark Suite ===")
+    print("Tip: use `python scripts/run_eval_suite.py` for the full eval report with LLM judges.")
     for idx, test in enumerate(benchmark_queries, 1):
         q = test["query"]
         res = service.query(query=q)
@@ -49,13 +50,13 @@ def main():
             query=q,
             retrieved_doc_ids=retrieved_ids,
             relevant_doc_ids=test["relevant_doc_ids"],
-            context=res["formatted_citations"],
-            answer=res["answer"]
+            context=res.get("retrieved_context") or "",
+            answer=res["answer"],
         )
 
         print(f"\n--- Test Question #{idx}: '{q}' ---")
         print(f"Answer:\n{res['answer']}\n")
-        print(f"Metrics: {metrics}")
+        print(f"Metrics: {metrics.get('metrics', metrics)}")
 
     print("\n=== Benchmark Completed ===")
 

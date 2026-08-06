@@ -72,3 +72,6 @@ Desktop.ini
 
 # --- Windows ---
 *.stackdump
+
+# --- Evaluation reports (generated) ---
+eval/reports/

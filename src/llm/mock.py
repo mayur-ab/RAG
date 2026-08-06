@@ -1,6 +1,6 @@
 import re
-from typing import Dict, Any
-from src.llm.base import BaseLLMProvider, SYSTEM_PROMPT
+from typing import Dict, Any, List, Optional
+from src.llm.base import BaseLLMProvider, SYSTEM_PROMPT, CHAT_SYSTEM_PROMPT
 
 
 class MockLLMProvider(BaseLLMProvider):
@@ -12,7 +12,8 @@ class MockLLMProvider(BaseLLMProvider):
         context: str,
         system_prompt: str = SYSTEM_PROMPT,
         temperature: float = 0.0,
-        max_tokens: int = 1000
+        max_tokens: int = 1000,
+        chat_history: Optional[List[Dict[str, str]]] = None,
     ) -> Dict[str, Any]:
         if not context or not context.strip():
             return {
@@ -45,3 +46,46 @@ class MockLLMProvider(BaseLLMProvider):
             "prompt_tokens": len(prompt.split()) + len(context.split()),
             "completion_tokens": len(answer.split())
         }
+
+    def chat(
+        self,
+        prompt: str,
+        chat_history: Optional[List[Dict[str, str]]] = None,
+        system_prompt: str = CHAT_SYSTEM_PROMPT,
+        temperature: float = 0.7,
+        max_tokens: int = 1000,
+    ) -> Dict[str, Any]:
+        answer = f"[Direct mode] {prompt}"
+        if chat_history:
+            answer = f"[Direct mode, {len(chat_history)} prior turns] {prompt}"
+        return {
+            "answer": answer,
+            "model": "mock-chat-llm",
+            "prompt_tokens": len(prompt.split()),
+            "completion_tokens": len(answer.split()),
+        }
+
+    def generate_stream(
+        self,
+        prompt: str,
+        context: str,
+        system_prompt: str = SYSTEM_PROMPT,
+        temperature: float = 0.0,
+        max_tokens: int = 1000,
+        chat_history: Optional[List[Dict[str, str]]] = None,
+    ):
+        result = self.generate(prompt, context, system_prompt, temperature, max_tokens, chat_history)
+        for word in result["answer"].split():
+            yield word + " "
+
+    def chat_stream(
+        self,
+        prompt: str,
+        chat_history=None,
+        system_prompt: str = CHAT_SYSTEM_PROMPT,
+        temperature: float = 0.7,
+        max_tokens: int = 1000,
+    ):
+        result = self.chat(prompt, chat_history, system_prompt, temperature, max_tokens)
+        for word in result["answer"].split():
+            yield word + " "

@@ -63,6 +63,9 @@ class AnswerFormatter:
 
         result = "\n".join(cleaned_lines).strip()
         result = re.sub(r"\n{3,}", "\n\n", result)
+        # Remove inline numeric citations when sources UI is hidden
+        result = re.sub(r"According to\s*\[\d+\],?\s*", "According to the documents, ", result, flags=re.IGNORECASE)
+        result = re.sub(r"\s*\[\d+\]", "", result)
         return result
 
     @staticmethod

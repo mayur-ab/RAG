@@ -1,4 +1,5 @@
 import re
+import math
 from typing import List, Dict, Any
 
 
@@ -34,7 +35,7 @@ class EvaluationMetrics:
     def faithfulness(answer: str, context: str) -> float:
         """Percentage of answer sentences grounded in context."""
         if "could not find that information" in answer.lower():
-            return 1.0
+            return 0.0
         sentences = [s.strip() for s in re.split(r"[.!?]", answer) if len(s.strip()) > 10]
         if not sentences:
             return 1.0
@@ -55,3 +56,39 @@ class EvaluationMetrics:
     @staticmethod
     def hallucination_rate(answer: str, context: str) -> float:
         return 1.0 - EvaluationMetrics.faithfulness(answer, context)
+
+    @staticmethod
+    def hit_at_k(retrieved_doc_ids: List[str], relevant_doc_ids: List[str], k: int = 5) -> float:
+        if not relevant_doc_ids:
+            return 1.0
+        top_k = retrieved_doc_ids[:k]
+        relevant_set = set(relevant_doc_ids)
+        return 1.0 if any(doc_id in relevant_set for doc_id in top_k) else 0.0
+
+    @staticmethod
+    def mean_reciprocal_rank(retrieved_doc_ids: List[str], relevant_doc_ids: List[str]) -> float:
+        if not relevant_doc_ids:
+            return 1.0
+        relevant_set = set(relevant_doc_ids)
+        for idx, doc_id in enumerate(retrieved_doc_ids, start=1):
+            if doc_id in relevant_set:
+                return 1.0 / idx
+        return 0.0
+
+    @staticmethod
+    def ndcg(retrieved_doc_ids: List[str], relevant_doc_ids: List[str], k: int = 5) -> float:
+        if not relevant_doc_ids:
+            return 1.0
+
+        relevant_set = set(relevant_doc_ids)
+        dcg = 0.0
+        for idx, doc_id in enumerate(retrieved_doc_ids[:k], start=1):
+            rel = 1.0 if doc_id in relevant_set else 0.0
+            if rel:
+                dcg += rel / math.log2(idx + 1)
+
+        ideal_hits = min(len(relevant_set), k)
+        idcg = sum(1.0 / math.log2(i + 1) for i in range(1, ideal_hits + 1))
+        if idcg == 0:
+            return 0.0
+        return dcg / idcg

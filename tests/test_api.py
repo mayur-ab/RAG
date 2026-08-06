@@ -31,4 +31,32 @@ def test_query_endpoint_empty_knowledge_base():
     data = response.json()
     assert "answer" in data
     assert "match_percent" in data
+    assert "retrieved_context" in data
     assert isinstance(data["match_percent"], (int, float))
+    assert data.get("mode") == "rag"
+
+
+def test_evaluate_endpoint():
+    payload = {
+        "query": "What is Rishi Kanada theory?",
+        "use_llm_judge": True,
+        "use_cache": False,
+    }
+    response = client.post("/evaluate", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert "metrics" in data
+    assert "heuristic" in data
+    assert "faithfulness" in data["heuristic"]
+    assert data.get("llm_judge") is not None
+
+
+def test_query_endpoint_direct_mode():
+    payload = {"query": "What is 2 plus 2?", "use_rag": False}
+    response = client.post("/query", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data.get("mode") == "direct"
+    assert data["retrieved_chunks_count"] == 0
+    assert data["reranked_chunks_count"] == 0
+    assert "answer" in data

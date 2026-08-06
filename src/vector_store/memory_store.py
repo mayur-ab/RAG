@@ -98,6 +98,68 @@ class MemoryVectorStore(BaseVectorStore):
             "store_type": "MemoryVectorStore"
         }
 
+    def get_all_documents(self) -> List[Document]:
+        return list(self.documents.values())
+
+    def get_ingest_record_by_source(self, source: str) -> Optional[Dict[str, Any]]:
+        from src.ingestion.fingerprint import normalize_source_path
+
+        normalized = normalize_source_path(source)
+        matches = [
+            doc
+            for doc in self.documents.values()
+            if normalize_source_path(doc.metadata.source) == normalized
+            or (doc.metadata.source_path or "") == normalized
+        ]
+        if not matches:
+            return None
+        meta = matches[0].metadata
+        return {
+            "document_id": meta.document_id,
+            "ingest_fingerprint": meta.ingest_fingerprint or "",
+            "chunking_strategy": meta.chunking_strategy or "",
+            "updated_at": meta.updated_at or "",
+            "chunk_count": len(matches),
+        }
+
+    def delete_by_source(self, source: str) -> int:
+        from src.ingestion.fingerprint import normalize_source_path
+
+        normalized = normalize_source_path(source)
+        to_delete = [
+            doc_id
+            for doc_id, doc in self.documents.items()
+            if normalize_source_path(doc.metadata.source) == normalized
+            or (doc.metadata.source_path or "") == normalized
+        ]
+        for doc_id in to_delete:
+            del self.documents[doc_id]
+            del self.vectors[doc_id]
+        if to_delete and self.persist_path:
+            self._save_to_disk()
+        return len(to_delete)
+
+    def list_indexed_sources(self) -> List[Dict[str, Any]]:
+        from src.ingestion.fingerprint import normalize_source_path
+
+        grouped: Dict[str, Dict[str, Any]] = {}
+        for doc in self.documents.values():
+            source = doc.metadata.source_path or doc.metadata.source or "unknown"
+            normalized = normalize_source_path(source)
+            if normalized not in grouped:
+                grouped[normalized] = {
+                    "source": normalized,
+                    "title": doc.metadata.title or "",
+                    "document_id": doc.metadata.document_id or "",
+                    "chunk_count": 0,
+                    "updated_at": doc.metadata.updated_at or "",
+                    "ingest_fingerprint": doc.metadata.ingest_fingerprint or "",
+                    "chunking_strategy": doc.metadata.chunking_strategy or "",
+                    "status": "indexed",
+                }
+            grouped[normalized]["chunk_count"] += 1
+        return sorted(grouped.values(), key=lambda item: item["source"].lower())
+
     def _save_to_disk(self):
         if not self.persist_path:
             return

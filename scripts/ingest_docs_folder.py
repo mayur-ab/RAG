@@ -1,4 +1,5 @@
 """Bulk-ingest every supported file in Docs/ and Uploaded-Docs/ (recursive)."""
+import argparse
 import os
 import sys
 import time
@@ -55,6 +56,14 @@ def chunking_for(path: Path) -> str:
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Bulk ingest Docs/ and Uploaded-Docs/")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Re-ingest all files even if already indexed (replaces existing chunks)",
+    )
+    args = parser.parse_args()
+
     all_ext = scan_all_extensions(settings.DOCS_DIR, settings.UPLOADED_DOCS_DIR)
     docs = collect_files(settings.DOCS_DIR, settings.UPLOADED_DOCS_DIR)
 
@@ -71,10 +80,14 @@ def main():
 
     print(f"=== Bulk ingest: {len(docs)} file(s) ===")
     print(f"    Embeddings: {settings.EMBEDDING_PROVIDER}")
-    print(f"    Default chunking: {settings.CHUNKING_STRATEGY} (.pdf/.doc use recursive)\n")
+    print(f"    Default chunking: {settings.CHUNKING_STRATEGY} (.pdf/.doc use recursive)")
+    if args.force:
+        print("    Mode: FORCE (re-index everything)\n")
+    else:
+        print("    Mode: RESUME (skip unchanged files — safe to stop and restart)\n")
 
     service = RAGPipelineService()
-    ok, failed = 0, 0
+    ok, skipped, failed = 0, 0, 0
     failed_files: list[str] = []
     t0 = time.time()
 
@@ -83,9 +96,18 @@ def main():
         strategy = chunking_for(path)
         print(f"[{i}/{len(docs)}] {path.name} ({strategy})...", end=" ", flush=True)
         try:
-            res = service.ingest_source(source=source, chunking_strategy=strategy)
-            print(f"OK — {res['total_chunks']} chunks")
-            ok += 1
+            res = service.ingest_source(
+                source=source,
+                chunking_strategy=strategy,
+                skip_if_unchanged=not args.force,
+                force=args.force,
+            )
+            if res.get("skipped"):
+                print(f"SKIP — {res['total_chunks']} chunks already indexed")
+                skipped += 1
+            else:
+                print(f"OK — {res['total_chunks']} chunks")
+                ok += 1
         except Exception as exc:
             print(f"FAILED — {exc}")
             failed += 1
@@ -94,7 +116,7 @@ def main():
     elapsed = round(time.time() - t0, 1)
     stats = service.vector_store.get_stats()
     print(f"\n=== Done in {elapsed}s ===")
-    print(f"Success: {ok}  Failed: {failed}")
+    print(f"Ingested: {ok}  Skipped: {skipped}  Failed: {failed}")
     print(f"Total vectors in Chroma: {stats.get('total_vectors', 0)}")
     print(f"BM25 chunks indexed: {len(service._all_chunk_documents)}")
 

@@ -26,6 +26,7 @@ def health_check(service: RAGPipelineService = Depends(get_rag_service)):
             "vector_store": settings.VECTOR_STORE_PROVIDER,
             "embeddings": settings.EMBEDDING_PROVIDER,
             "llm": settings.LLM_PROVIDER,
+            "llm_model": service.get_llm_model_name(),
             "reranker": settings.RERANKER_PROVIDER,
             "chunking": settings.CHUNKING_STRATEGY,
         },
@@ -33,6 +34,10 @@ def health_check(service: RAGPipelineService = Depends(get_rag_service)):
         "bm25_chunks_indexed": len(service._all_chunk_documents),
         "ollama": ollama_status,
         "nvidia_api_key_configured": bool(settings.NVIDIA_API_KEY),
+        "limits": {
+            "max_query_chars": settings.MAX_QUERY_LENGTH,
+            "max_query_warn_chars": settings.MAX_QUERY_WARN_LENGTH,
+        },
     }
 
 

@@ -1,0 +1,37 @@
+{
+  "description": "Questions-only eval set for the indexed Docs corpus. Add relevant_doc_ids per question when known.",
+  "questions": [
+    {
+      "query": "What is AI in Learning Space?",
+      "relevant_doc_ids": []
+    },
+    {
+      "query": "Tell me about personalized learning using artificial intelligence.",
+      "relevant_doc_ids": []
+    },
+    {
+      "query": "What are the four mental muscles in the Rishi Cognitive Framework?",
+      "relevant_doc_ids": ["The_Rishi_Cognitive_Framework__Ancient_Logic_for_Modern_Minds.txt"]
+    },
+    {
+      "query": "How did Rishi Kanada deduce atomic theory?",
+      "relevant_doc_ids": ["The_Rishi_Cognitive_Framework__Ancient_Logic_for_Modern_Minds.txt"]
+    },
+    {
+      "query": "What is Shabda Brahma and Chladni figures?",
+      "relevant_doc_ids": ["The_Rishi_Cognitive_Framework__Ancient_Logic_for_Modern_Minds.txt"]
+    },
+    {
+      "query": "List manufacturers or companies with contact details.",
+      "relevant_doc_ids": []
+    },
+    {
+      "query": "What training or certification programs are mentioned in the documents?",
+      "relevant_doc_ids": []
+    },
+    {
+      "query": "Summarize key benefits of adaptive learning platforms.",
+      "relevant_doc_ids": []
+    }
+  ]
+}
