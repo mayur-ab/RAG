@@ -14,7 +14,17 @@ class MockLLMProvider(BaseLLMProvider):
         temperature: float = 0.0,
         max_tokens: int = 1000,
         chat_history: Optional[List[Dict[str, str]]] = None,
+        chat_compact: Optional[str] = None,
     ) -> Dict[str, Any]:
+        from src.context.conversation import build_rag_user_message
+
+        user_block = build_rag_user_message(context, prompt, chat_compact=chat_compact)
+        if not chat_compact and chat_history:
+            from src.context.conversation import format_routing_turns
+            legacy = format_routing_turns(chat_history[-4:])
+            if legacy:
+                user_block = f"Context:\n{context}\n\nPrior exchange:\n{legacy}\n\nCurrent question: {prompt}"
+
         if not context or not context.strip():
             return {
                 "answer": "I could not find that information in the provided knowledge base.",
@@ -55,6 +65,48 @@ class MockLLMProvider(BaseLLMProvider):
         temperature: float = 0.7,
         max_tokens: int = 1000,
     ) -> Dict[str, Any]:
+        if "Return ONLY valid JSON" in (system_prompt or ""):
+            return {
+                "answer": (
+                    '{"preferences":["likes detailed explanations"],'
+                    '"projects":["building local RAG"],'
+                    '"interests":["chromadb","memory architecture"],'
+                    '"facts":["uses Ollama locally"],'
+                    '"style":{"preferred_answer_style":"detailed","likes_examples":true}}'
+                ),
+                "model": "mock-chat-llm",
+                "prompt_tokens": len(prompt.split()),
+                "completion_tokens": 24,
+            }
+        if "Updated summary:" in prompt:
+            user_line = next((line for line in prompt.splitlines() if line.startswith("User: ")), "")
+            return {
+                "answer": f"Rolling chat summary. {user_line}".strip(),
+                "model": "mock-chat-llm",
+                "prompt_tokens": len(prompt.split()),
+                "completion_tokens": 12,
+            }
+        if "Merged session summary:" in prompt:
+            return {
+                "answer": "Session summary covering prior chats and the latest chat topics.",
+                "model": "mock-chat-llm",
+                "prompt_tokens": len(prompt.split()),
+                "completion_tokens": 10,
+            }
+        if "Final session summary:" in prompt:
+            return {
+                "answer": "User discussed RAG architecture, ChromaDB, and long-term memory design.",
+                "model": "mock-chat-llm",
+                "prompt_tokens": len(prompt.split()),
+                "completion_tokens": 16,
+            }
+        if "summarize conversations" in (system_prompt or "").lower() or prompt.strip().endswith("Summary:"):
+            return {
+                "answer": "User discussed RAG architecture, ChromaDB, and long-term memory design.",
+                "model": "mock-chat-llm",
+                "prompt_tokens": len(prompt.split()),
+                "completion_tokens": 16,
+            }
         answer = f"[Direct mode] {prompt}"
         if chat_history:
             answer = f"[Direct mode, {len(chat_history)} prior turns] {prompt}"
@@ -73,8 +125,17 @@ class MockLLMProvider(BaseLLMProvider):
         temperature: float = 0.0,
         max_tokens: int = 1000,
         chat_history: Optional[List[Dict[str, str]]] = None,
+        chat_compact: Optional[str] = None,
     ):
-        result = self.generate(prompt, context, system_prompt, temperature, max_tokens, chat_history)
+        result = self.generate(
+            prompt,
+            context,
+            system_prompt,
+            temperature,
+            max_tokens,
+            chat_history,
+            chat_compact,
+        )
         for word in result["answer"].split():
             yield word + " "
 

@@ -21,11 +21,15 @@ class RewriteMockLLM(MockLLMProvider):
 
 def test_rewrite_follow_up_question():
     rewriter = QueryRewriter(RewriteMockLLM())
-    history = [
+    routing = [
         {"role": "user", "content": "give me address of hindustan pencils"},
         {"role": "assistant", "content": "The address is Voltas House, Mumbai."},
     ]
-    rewritten = rewriter.rewrite("their email id?", history)
+    rewritten = rewriter.rewrite(
+        "their email id?",
+        chat_compact="User asked for Hindustan Pencils address; assistant gave Mumbai address.",
+        routing_turns=routing,
+    )
     assert "Hindustan Pencils" in rewritten
     assert "email" in rewritten.lower()
 

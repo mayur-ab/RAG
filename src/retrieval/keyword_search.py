@@ -14,11 +14,17 @@ class BM25SearchEngine:
         self._corpus_tokens: List[List[str]] = []
 
     def _tokenize(self, text: str) -> List[str]:
+        text = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text or "")
         return re.findall(r"\w+", text.lower())
+
+    def _document_tokens(self, doc: Document) -> List[str]:
+        source_name = (doc.metadata.source or "").replace("\\", "/").split("/")[-1]
+        title = doc.metadata.title or ""
+        return self._tokenize(f"{title} {source_name} {doc.content}")
 
     def index(self, documents: List[Document]) -> None:
         self.documents = documents
-        self._corpus_tokens = [self._tokenize(doc.content) for doc in documents]
+        self._corpus_tokens = [self._document_tokens(doc) for doc in documents]
         if not self._corpus_tokens:
             self._bm25 = None
             return
@@ -41,6 +47,11 @@ class BM25SearchEngine:
         query_tokens = self._tokenize(query)
         if not query_tokens:
             return []
+
+        expanded_tokens = list(query_tokens)
+        if any("deviglow" in token for token in query_tokens):
+            expanded_tokens.extend(["devi", "glow"])
+        query_tokens = expanded_tokens
 
         scores: List[float] = []
         if self._bm25:

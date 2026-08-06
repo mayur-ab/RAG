@@ -19,6 +19,9 @@ class QueryCache:
         use_rag: bool,
         model: str,
         chat_history: Optional[list] = None,
+        user_id: Optional[str] = None,
+        chat_id: Optional[str] = None,
+        chat_compact: Optional[str] = None,
     ) -> str:
         history_slice = (chat_history or [])[-4:]
         payload = {
@@ -26,6 +29,9 @@ class QueryCache:
             "use_rag": use_rag,
             "model": model,
             "history": history_slice,
+            "user_id": user_id or "",
+            "chat_id": chat_id or "",
+            "chat_compact": (chat_compact or "")[:240],
         }
         raw = json.dumps(payload, sort_keys=True, ensure_ascii=True)
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
@@ -36,8 +42,11 @@ class QueryCache:
         use_rag: bool,
         model: str,
         chat_history: Optional[list] = None,
+        user_id: Optional[str] = None,
+        chat_id: Optional[str] = None,
+        chat_compact: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
-        key = self._make_key(query, use_rag, model, chat_history)
+        key = self._make_key(query, use_rag, model, chat_history, user_id, chat_id, chat_compact)
         entry = self._store.get(key)
         if not entry:
             return None
@@ -56,8 +65,11 @@ class QueryCache:
         model: str,
         chat_history: Optional[list],
         data: Dict[str, Any],
+        user_id: Optional[str] = None,
+        chat_id: Optional[str] = None,
+        chat_compact: Optional[str] = None,
     ) -> None:
-        key = self._make_key(query, use_rag, model, chat_history)
+        key = self._make_key(query, use_rag, model, chat_history, user_id, chat_id, chat_compact)
         stored = dict(data)
         stored.pop("cached", None)
         self._store[key] = {"ts": time.time(), "data": stored}

@@ -54,11 +54,17 @@ class OllamaLLMProvider(BaseLLMProvider):
         temperature: float = 0.0,
         max_tokens: int = 1000,
         chat_history: Optional[List[Dict[str, str]]] = None,
+        chat_compact: Optional[str] = None,
     ) -> Dict[str, Any]:
         from src.context.conversation import build_rag_user_message
 
         url = f"{self.base_url}/api/chat"
-        user_content = build_rag_user_message(context, prompt, chat_history)
+        user_content = build_rag_user_message(context, prompt, chat_compact=chat_compact)
+        if not chat_compact and chat_history:
+            from src.context.conversation import format_routing_turns
+            legacy = format_routing_turns(chat_history[-4:])
+            if legacy:
+                user_content = f"Context:\n{context}\n\nPrior exchange:\n{legacy}\n\nCurrent question: {prompt}"
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content},
@@ -141,10 +147,16 @@ class OllamaLLMProvider(BaseLLMProvider):
         temperature: float = 0.0,
         max_tokens: int = 1000,
         chat_history: Optional[List[Dict[str, str]]] = None,
+        chat_compact: Optional[str] = None,
     ) -> Iterator[str]:
         from src.context.conversation import build_rag_user_message
 
-        user_content = build_rag_user_message(context, prompt, chat_history)
+        user_content = build_rag_user_message(context, prompt, chat_compact=chat_compact)
+        if not chat_compact and chat_history:
+            from src.context.conversation import format_routing_turns
+            legacy = format_routing_turns(chat_history[-4:])
+            if legacy:
+                user_content = f"Context:\n{context}\n\nPrior exchange:\n{legacy}\n\nCurrent question: {prompt}"
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content},

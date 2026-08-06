@@ -80,39 +80,223 @@
       transition: background var(--transition), color var(--transition);
     }
 
-    header {
-      position: sticky;
-      top: 0;
-      z-index: 10;
-      padding: 0.9rem 1.5rem;
+    .app-shell {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      overflow: visible;
+    }
+
+    .sidebar {
+      width: 260px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+      min-height: 0;
+      transition: width var(--transition);
+      overflow: visible;
+    }
+
+    .sidebar.collapsed {
+      width: 56px;
+    }
+
+    .sidebar.collapsed .sidebar-brand-text,
+    .sidebar.collapsed .sidebar-label,
+    .sidebar.collapsed .sidebar-scroll,
+    .sidebar.collapsed .label-text {
+      display: none !important;
+    }
+
+    .sidebar.collapsed .sidebar-nav-btn {
+      text-align: center;
+      padding-inline: 0.45rem;
+    }
+
+    .sidebar.collapsed .sidebar-brand {
+      justify-content: center;
+    }
+
+    .sidebar-top {
+      padding: 0.85rem 0.75rem 0.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+    }
+
+    .sidebar-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      padding: 0.15rem 0.35rem 0.35rem;
+      font-weight: 650;
+      font-size: 0.95rem;
+    }
+
+    .sidebar-icon-btn {
+      flex-shrink: 0;
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface-elevated);
+      color: var(--text-muted);
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      font-size: 1rem;
+      line-height: 1;
+      transition: background var(--transition), color var(--transition);
+    }
+
+    .sidebar-icon-btn:hover {
+      background: var(--surface-hover);
+      color: var(--text);
+    }
+
+    .sidebar-expand-btn[hidden] {
+      display: none !important;
+    }
+
+    .sidebar-brand-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--accent), #818cf8);
+      display: grid;
+      place-items: center;
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .sidebar-nav-btn {
+      width: 100%;
+      text-align: left;
+      padding: 0.55rem 0.7rem;
+      border-radius: 10px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text);
+      font-size: 0.82rem;
+      cursor: pointer;
+      transition: background var(--transition), border-color var(--transition);
+    }
+
+    .sidebar-nav-btn:hover { background: var(--surface-hover); }
+    .sidebar-nav-btn.primary {
+      border-color: var(--border);
+      background: var(--surface-elevated);
+    }
+    .sidebar-nav-btn.active {
+      background: var(--surface-hover);
+      border-color: var(--border);
+    }
+
+    .sidebar-scroll {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 0 0.55rem 0.5rem;
+    }
+
+    .sidebar-label {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      padding: 0.55rem 0.45rem 0.35rem;
+    }
+
+    .sidebar-item {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: 0.5rem 0.65rem;
+      border-radius: 10px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: background var(--transition), color var(--transition);
+    }
+
+    .sidebar-item:hover { background: var(--surface-hover); color: var(--text); }
+    .sidebar-item.active { background: var(--surface-hover); color: var(--text); }
+    .sidebar-item.session-item { font-size: 0.74rem; opacity: 0.85; }
+
+    .sidebar-footer {
+      border-top: 1px solid var(--border);
+      padding: 0.55rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      overflow: visible;
+      position: relative;
+      z-index: 6;
+    }
+
+    .main-pane {
+      flex: 1;
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .main-header {
+      flex-shrink: 0;
+      padding: 0.65rem 1rem;
       border-bottom: 1px solid var(--border);
       background: var(--header-bg);
       backdrop-filter: blur(12px);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 1rem;
+      gap: 0.75rem;
     }
 
-    .brand { display: flex; align-items: center; gap: 0.75rem; }
-
-    .brand-icon {
-      width: 36px;
-      height: 36px;
-      border-radius: 10px;
-      background: linear-gradient(135deg, var(--accent), #818cf8);
-      display: grid;
-      place-items: center;
-      font-weight: 700;
-      font-size: 0.85rem;
-      color: white;
-      box-shadow: 0 4px 12px var(--accent-glow);
+    .main-header-title {
+      font-size: 0.88rem;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
-    header h1 { font-size: 1.05rem; font-weight: 650; letter-spacing: -0.02em; }
-    header p { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.1rem; }
+    .main-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      flex-shrink: 0;
+    }
 
-    .header-actions { display: flex; align-items: center; gap: 0.5rem; }
+    .main-header-left {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .sidebar-nav-btn .collapsed-icon {
+      display: none;
+    }
+
+    .sidebar.collapsed .sidebar-nav-btn .collapsed-icon {
+      display: inline;
+    }
+
+    .sidebar.collapsed .sidebar-brand-icon {
+      display: none;
+    }
 
     .icon-btn {
       width: 38px;
@@ -476,6 +660,10 @@
       transition: all var(--transition);
     }
 
+    .send-btn[hidden] {
+      display: none !important;
+    }
+
     .send-btn:hover:not(:disabled) {
       background: var(--accent-hover);
       transform: scale(1.04);
@@ -564,15 +752,23 @@
     .export-wrap { position: relative; }
     .export-menu {
       position: absolute;
-      top: calc(100% + 6px);
+      bottom: calc(100% + 6px);
+      left: 0;
       right: 0;
       min-width: 140px;
       background: var(--surface-elevated);
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
       box-shadow: var(--shadow);
-      z-index: 20;
+      z-index: 40;
       overflow: hidden;
+    }
+
+    .sidebar.collapsed .export-menu {
+      left: calc(100% + 8px);
+      right: auto;
+      bottom: 0;
+      min-width: 150px;
     }
 
     .export-menu button {
@@ -677,6 +873,16 @@
       padding: 1rem;
     }
 
+    .modal.modal-top {
+      z-index: 100;
+    }
+
+    .profile-summary {
+      font-size: 0.84rem;
+      line-height: 1.5;
+      color: var(--text);
+    }
+
     .panel[hidden], .modal[hidden] {
       display: none !important;
     }
@@ -712,6 +918,75 @@
     .doc-meta { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.15rem; }
     .doc-path { font-size: 0.68rem; color: var(--text-muted); margin-top: 0.15rem; word-break: break-all; }
 
+    .profile-section { margin-bottom: 1rem; }
+    .profile-section h4 {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+      margin-bottom: 0.45rem;
+    }
+    .profile-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 0.5rem;
+    }
+    .profile-chip, .profile-tag {
+      display: inline-block;
+      padding: 0.25rem 0.55rem;
+      border-radius: 999px;
+      background: var(--surface-hover);
+      border: 1px solid var(--border);
+      font-size: 0.78rem;
+      margin: 0.15rem 0.25rem 0.15rem 0;
+    }
+    .profile-value { font-size: 0.88rem; line-height: 1.45; }
+    .profile-list { list-style: none; padding: 0; }
+    .profile-list li {
+      padding: 0.55rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.82rem;
+      line-height: 1.45;
+    }
+    .profile-list li:last-child { border-bottom: none; }
+    .profile-meta { font-size: 0.68rem; color: var(--text-muted); margin-top: 0.2rem; }
+    .profile-empty { color: var(--text-muted); font-size: 0.82rem; }
+    .profile-name { font-size: 1.1rem; font-weight: 650; margin-bottom: 0.25rem; }
+    .profile-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+    }
+    .danger-btn {
+      background: rgba(239, 68, 68, 0.12);
+      border-color: rgba(239, 68, 68, 0.45);
+      color: #fca5a5;
+    }
+    [data-theme="light"] .danger-btn {
+      color: #b91c1c;
+      background: #fef2f2;
+    }
+    .danger-btn:hover {
+      background: rgba(239, 68, 68, 0.22);
+      border-color: #ef4444;
+    }
+    .confirm-card { width: min(480px, 100%); }
+    .confirm-message {
+      font-size: 0.88rem;
+      line-height: 1.55;
+      color: var(--text-muted);
+      margin: 0.75rem 0 1rem;
+      white-space: pre-line;
+    }
+    .confirm-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+    }
+
     .progress-track {
       height: 8px;
       background: var(--surface-hover);
@@ -736,10 +1011,10 @@
     @keyframes blink { 50% { opacity: 0; } }
 
     @media (max-width: 768px) {
-      header { padding: 0.65rem 0.85rem; flex-wrap: wrap; }
-      header p { display: none; }
-      .header-actions { flex-wrap: wrap; justify-content: flex-end; }
-      .toolbar { padding: 0.4rem 0.75rem; }
+      .sidebar:not(.collapsed) { width: 220px; }
+      .sidebar.collapsed { width: 0; border-right: none; overflow: hidden; }
+      .main-header { padding: 0.55rem 0.75rem; flex-wrap: wrap; }
+      .main-header-actions { flex-wrap: wrap; justify-content: flex-end; }
       .mode-toggle { order: 3; width: 100%; justify-content: center; }
       .model-select { max-width: 120px; }
       .chat-inner, .composer { padding-left: 0.75rem; padding-right: 0.75rem; }
@@ -749,46 +1024,80 @@
   </style>
 </head>
 <body>
-  <header>
-    <div class="brand">
-      <div class="brand-icon">RAG</div>
-      <div>
-        <h1>Knowledge Assistant</h1>
-        <p>Ask anything from your document library</p>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-top">
+        <div class="sidebar-brand">
+          <button type="button" class="sidebar-icon-btn" id="sidebar-collapse-btn" title="Collapse sidebar" aria-label="Collapse sidebar">‹</button>
+          <div class="sidebar-brand-icon">RAG</div>
+          <span class="sidebar-brand-text">Assistant</span>
+        </div>
+        <button type="button" class="sidebar-nav-btn primary" id="new-chat-btn" title="New chat">
+          <span class="label-text">+ New chat</span>
+          <span class="collapsed-icon" aria-hidden="true">+</span>
+        </button>
       </div>
-    </div>
-    <div class="header-actions">
-      <div class="mode-toggle" title="Toggle between document search (RAG) and direct model chat">
-        <span class="mode-toggle-label active" id="rag-label">RAG</span>
-        <label class="switch" aria-label="Toggle RAG mode">
-          <input type="checkbox" id="rag-toggle" checked />
-          <span class="switch-slider"></span>
-        </label>
-        <span class="mode-toggle-label" id="direct-label">Direct</span>
+      <div class="sidebar-scroll">
+        <div class="sidebar-label">Recents</div>
+        <div id="sidebar-recents"></div>
+        <div class="sidebar-label">Past sessions</div>
+        <div id="sidebar-sessions"></div>
       </div>
-      <select id="model-select" class="model-select" title="LLM model"></select>
-      <button type="button" class="icon-btn" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
-        <span id="theme-icon">☀️</span>
-      </button>
-      <div class="status" id="status">Connecting...</div>
-    </div>
-  </header>
+      <div class="sidebar-footer">
+        <button type="button" class="sidebar-nav-btn" id="end-session-sidebar-btn" title="End session">
+          <span class="label-text">End session</span>
+          <span class="collapsed-icon" aria-hidden="true">⏻</span>
+        </button>
+        <button type="button" class="sidebar-nav-btn" id="profile-btn" title="Profile">
+          <span class="label-text">Profile</span>
+          <span class="collapsed-icon" aria-hidden="true">👤</span>
+        </button>
+        <button type="button" class="sidebar-nav-btn" id="docs-btn" title="Documents">
+          <span class="label-text">Documents</span>
+          <span class="collapsed-icon" aria-hidden="true">📄</span>
+        </button>
+        <div class="export-wrap">
+          <button type="button" class="sidebar-nav-btn" id="export-btn" title="Export chat">
+            <span class="label-text">Export</span>
+            <span class="collapsed-icon" aria-hidden="true">⇪</span>
+          </button>
+          <div class="export-menu" id="export-menu" hidden>
+            <button type="button" id="export-md">Markdown</button>
+            <button type="button" id="export-pdf">PDF</button>
+            <button type="button" id="export-copy">Copy all</button>
+          </div>
+        </div>
+        <button type="button" class="sidebar-nav-btn" id="reindex-btn" title="Re-index all">
+          <span class="label-text">Re-index all</span>
+          <span class="collapsed-icon" aria-hidden="true">⟳</span>
+        </button>
+      </div>
+    </aside>
 
-  <div class="toolbar">
-    <button type="button" class="toolbar-btn" id="new-chat-btn">New chat</button>
-    <div class="export-wrap">
-      <button type="button" class="toolbar-btn" id="export-btn">Export</button>
-      <div class="export-menu" id="export-menu" hidden>
-        <button type="button" id="export-md">Markdown</button>
-        <button type="button" id="export-pdf">PDF</button>
-        <button type="button" id="export-copy">Copy all</button>
+    <div class="main-pane">
+      <div class="main-header">
+        <div class="main-header-left">
+          <button type="button" class="icon-btn sidebar-expand-btn" id="sidebar-expand-btn" title="Expand sidebar" aria-label="Expand sidebar" hidden>☰</button>
+          <div class="main-header-title" id="chat-title">New chat</div>
+        </div>
+        <div class="main-header-actions">
+          <div class="mode-toggle" title="Toggle between document search (RAG) and direct model chat">
+            <span class="mode-toggle-label active" id="rag-label">RAG</span>
+            <label class="switch" aria-label="Toggle RAG mode">
+              <input type="checkbox" id="rag-toggle" checked />
+              <span class="switch-slider"></span>
+            </label>
+            <span class="mode-toggle-label" id="direct-label">Direct</span>
+          </div>
+          <select id="model-select" class="model-select" title="LLM model"></select>
+          <button type="button" class="icon-btn" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
+            <span id="theme-icon">☀️</span>
+          </button>
+          <div class="status" id="status">Connecting...</div>
+        </div>
       </div>
-    </div>
-    <button type="button" class="toolbar-btn" id="docs-btn">Documents</button>
-    <button type="button" class="toolbar-btn" id="reindex-btn">Re-index all</button>
-  </div>
 
-  <main>
+      <main>
     <div id="chat">
       <div class="chat-inner" id="chat-inner">
         <div class="welcome" id="welcome">
@@ -839,6 +1148,8 @@
       </form>
     </div>
   </main>
+    </div>
+  </div>
 
   <div class="panel" id="docs-panel" hidden>
     <div class="panel-card">
@@ -847,6 +1158,31 @@
         <button type="button" class="toolbar-btn" id="docs-close">Close</button>
       </div>
       <div id="docs-list"></div>
+    </div>
+  </div>
+
+  <div class="modal modal-top" id="confirm-modal" hidden>
+    <div class="modal-card confirm-card">
+      <div class="modal-header">
+        <h3 id="confirm-title">Confirm</h3>
+      </div>
+      <p class="confirm-message" id="confirm-message"></p>
+      <div class="confirm-actions">
+        <button type="button" class="toolbar-btn" id="confirm-cancel">Cancel</button>
+        <button type="button" class="toolbar-btn danger-btn" id="confirm-ok">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="profile-modal" hidden>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Your profile</h3>
+        <button type="button" class="toolbar-btn" id="profile-close">Close</button>
+      </div>
+      <div id="profile-content">
+        <p class="profile-empty">Loading profile...</p>
+      </div>
     </div>
   </div>
 

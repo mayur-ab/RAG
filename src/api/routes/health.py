@@ -38,6 +38,11 @@ def health_check(service: RAGPipelineService = Depends(get_rag_service)):
             "max_query_chars": settings.MAX_QUERY_LENGTH,
             "max_query_warn_chars": settings.MAX_QUERY_WARN_LENGTH,
         },
+        "user_memory": {
+            "enabled": settings.ENABLE_USER_MEMORY,
+            "profile_store": "sqlite",
+            "episodic_store": "chroma",
+        },
     }
 
 

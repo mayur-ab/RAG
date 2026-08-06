@@ -22,6 +22,15 @@
   const exportBtn = document.getElementById("export-btn");
   const exportMenu = document.getElementById("export-menu");
   const docsBtn = document.getElementById("docs-btn");
+  const profileBtn = document.getElementById("profile-btn");
+  const profileModal = document.getElementById("profile-modal");
+  const profileContent = document.getElementById("profile-content");
+  const profileClose = document.getElementById("profile-close");
+  const confirmModal = document.getElementById("confirm-modal");
+  const confirmTitle = document.getElementById("confirm-title");
+  const confirmMessage = document.getElementById("confirm-message");
+  const confirmCancel = document.getElementById("confirm-cancel");
+  const confirmOk = document.getElementById("confirm-ok");
   const reindexBtn = document.getElementById("reindex-btn");
   const docsPanel = document.getElementById("docs-panel");
   const docsList = document.getElementById("docs-list");
@@ -32,23 +41,445 @@
   const ingestClose = document.getElementById("ingest-close");
   const dropZone = document.getElementById("drop-zone");
   const queryLimitHint = document.getElementById("query-limit-hint");
+  const chatTitleEl = document.getElementById("chat-title");
+  const sidebarRecentsEl = document.getElementById("sidebar-recents");
+  const sidebarSessionsEl = document.getElementById("sidebar-sessions");
+  const endSessionSidebarBtn = document.getElementById("end-session-sidebar-btn");
+  const sidebar = document.getElementById("sidebar");
+  const sidebarCollapseBtn = document.getElementById("sidebar-collapse-btn");
+  const sidebarExpandBtn = document.getElementById("sidebar-expand-btn");
   const html = document.documentElement;
 
-  const CHAT_STORAGE_KEY = "rag-chat-session-v1";
+  const SIDEBAR_COLLAPSED_KEY = "rag-sidebar-collapsed";
+
+  const CHAT_STORAGE_KEY = "rag-chat-session-v2";
+  const SESSION_STORAGE_KEY = "rag-session-v2";
+  const RECENTS_STORAGE_KEY = "rag-recents-v1";
+  const USER_ID_STORAGE_KEY = "rag-user-id-v1";
   const MAX_STORED_RECORDS = 80;
+  const MAX_RECENTS = 24;
   let maxQueryChars = 4000;
   let queryWarnChars = 3600;
   let chatPersistEnabled = true;
 
   const chatHistory = [];
   const messageRecords = [];
+  let sessionId = null;
+  let chatId = null;
+  let chatCompact = "";
+  let pinnedSources = [];
+  let activeRecentId = null;
+  let archivedSessions = [];
   let useRag = true;
   let abortController = null;
   let isGenerating = false;
   let ingestEventSource = null;
+  let confirmResolver = null;
+
+  function showConfirmDialog(title, message, confirmLabel = "Confirm") {
+    return new Promise((resolve) => {
+      confirmResolver = resolve;
+      confirmTitle.textContent = title;
+      confirmMessage.textContent = message;
+      confirmOk.textContent = confirmLabel;
+      confirmModal.hidden = false;
+      confirmModal.classList.add("modal-top");
+    });
+  }
+
+  function closeConfirmDialog(result = false) {
+    confirmModal.hidden = true;
+    confirmModal.classList.remove("modal-top");
+    if (confirmResolver) {
+      confirmResolver(result);
+      confirmResolver = null;
+    }
+  }
+
+  function applySidebarCollapsed(collapsed) {
+    sidebar?.classList.toggle("collapsed", collapsed);
+    if (sidebarCollapseBtn) {
+      sidebarCollapseBtn.textContent = collapsed ? "›" : "‹";
+      sidebarCollapseBtn.title = collapsed ? "Expand sidebar" : "Collapse sidebar";
+      sidebarCollapseBtn.setAttribute("aria-label", sidebarCollapseBtn.title);
+    }
+    if (sidebarExpandBtn) sidebarExpandBtn.hidden = !collapsed;
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0");
+    } catch {
+      // Ignore storage errors.
+    }
+    if (collapsed && exportMenu) exportMenu.hidden = true;
+  }
+
+  function initSidebarCollapse() {
+    let collapsed = false;
+    try {
+      collapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+    } catch {
+      collapsed = false;
+    }
+    applySidebarCollapsed(collapsed);
+  }
 
   function closeDocsPanel() {
     docsPanel.hidden = true;
+  }
+
+  function closeProfileModal() {
+    profileModal.hidden = true;
+  }
+
+  function escapeHtml(text) {
+    return String(text || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function formatWhen(value) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleString();
+  }
+
+  function deriveChatTitle() {
+    const firstUser = messageRecords.find((m) => m.role === "user");
+    if (!firstUser?.content) return "New chat";
+    const text = firstUser.content.trim();
+    return text.length > 52 ? `${text.slice(0, 52)}…` : text;
+  }
+
+  function updateChatTitle() {
+    if (chatTitleEl) chatTitleEl.textContent = deriveChatTitle();
+  }
+
+  function getRecents() {
+    try {
+      const raw = localStorage.getItem(RECENTS_STORAGE_KEY);
+      const data = raw ? JSON.parse(raw) : [];
+      return Array.isArray(data) ? data : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveRecents(recents) {
+    try {
+      localStorage.setItem(RECENTS_STORAGE_KEY, JSON.stringify(recents.slice(0, MAX_RECENTS)));
+    } catch {
+      // Ignore quota errors.
+    }
+  }
+
+  function upsertCurrentRecent() {
+    if (!messageRecords.length) return;
+    const recents = getRecents();
+    const id = chatId || activeRecentId || (crypto.randomUUID && crypto.randomUUID()) || `chat-${Date.now()}`;
+    chatId = id;
+    activeRecentId = id;
+    const entry = {
+      id,
+      title: deriveChatTitle(),
+      updatedAt: Date.now(),
+      messageRecords: messageRecords.slice(-MAX_STORED_RECORDS),
+      chatHistory: chatHistory.slice(-MAX_STORED_RECORDS),
+      chatCompact,
+      pinnedSources: pinnedSources.slice(),
+      sessionId,
+    };
+    const idx = recents.findIndex((item) => item.id === id);
+    if (idx >= 0) recents[idx] = entry;
+    else recents.unshift(entry);
+    saveRecents(recents);
+    renderSidebarRecents();
+    updateChatTitle();
+  }
+
+  function renderSidebarRecents() {
+    if (!sidebarRecentsEl) return;
+    const recents = getRecents();
+    if (!recents.length) {
+      sidebarRecentsEl.innerHTML = '<p class="profile-empty" style="padding:0.35rem 0.65rem">No chats yet</p>';
+    } else {
+      sidebarRecentsEl.innerHTML = recents
+        .map(
+          (item) =>
+            `<button type="button" class="sidebar-item${item.id === activeRecentId ? " active" : ""}" data-recent-id="${escapeHtml(item.id)}" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</button>`
+        )
+        .join("");
+      sidebarRecentsEl.querySelectorAll("[data-recent-id]").forEach((btn) => {
+        btn.addEventListener("click", () => loadRecentChat(btn.dataset.recentId));
+      });
+    }
+
+    if (!sidebarSessionsEl) return;
+    if (!archivedSessions.length) {
+      sidebarSessionsEl.innerHTML =
+        '<p class="profile-empty" style="padding:0.35rem 0.65rem">End a session to archive it here</p>';
+      return;
+    }
+    sidebarSessionsEl.innerHTML = archivedSessions
+      .map((session) => {
+        const label = (session.summary || "Archived session").split("\n")[0];
+        const short = label.length > 56 ? `${label.slice(0, 56)}…` : label;
+        return `<button type="button" class="sidebar-item session-item" title="${escapeHtml(session.summary || "")}" disabled>${escapeHtml(short)}</button>`;
+      })
+      .join("");
+  }
+
+  async function refreshArchivedSessions() {
+    try {
+      const res = await fetch(`${API_BASE}/memory/profile?user_id=${encodeURIComponent(getUserId())}`);
+      if (!res.ok) return;
+      const profile = await res.json();
+      archivedSessions = profile.recent_sessions || [];
+      renderSidebarRecents();
+    } catch {
+      // Ignore sidebar refresh errors.
+    }
+  }
+
+  function loadRecentChat(recentId) {
+    const recent = getRecents().find((item) => item.id === recentId);
+    if (!recent) return;
+    if (isGenerating) {
+      abortController?.abort();
+      setGenerating(false);
+      abortController = null;
+    }
+    hideStage();
+    chatInner.innerHTML = "";
+    chatHistory.length = 0;
+    messageRecords.length = 0;
+    recent.messageRecords?.forEach((record) => {
+      if (!record?.content || !record?.role) return;
+      addMessage(record.content, record.role, record.meta || {});
+    });
+    chatHistory.push(...(recent.chatHistory || []));
+    chatCompact = recent.chatCompact || "";
+    pinnedSources = Array.isArray(recent.pinnedSources) ? recent.pinnedSources.slice() : [];
+    chatId = recent.id;
+    activeRecentId = recent.id;
+    sessionId = recent.sessionId || sessionId;
+    attachEditToLastUserMessage();
+    chat.scrollTop = chat.scrollHeight;
+    updateChatTitle();
+    renderSidebarRecents();
+    persistChat();
+  }
+
+  function renderTagList(items) {
+    if (!items?.length) return '<p class="profile-empty">None yet</p>';
+    return items.map((item) => `<span class="profile-tag">${escapeHtml(item)}</span>`).join("");
+  }
+
+  function renderProfileModal(profile) {
+    const prefs = profile.preferences || {};
+    const style = profile.style || {};
+    const recent = profile.recent_sessions || [];
+    const active = profile.active_session || null;
+
+    const currentHtml = active?.working_compact
+      ? `<p class="profile-summary">${escapeHtml(active.working_compact)}</p>
+         <div class="profile-meta">${active.chat_count || 0} chats · started ${escapeHtml(active.started_at || "")}</div>`
+      : messageRecords.length
+        ? `<p class="profile-empty">Active session in progress (${messageRecords.length} messages in current chat).</p>`
+        : '<p class="profile-empty">No active session yet.</p>';
+
+    const recentHtml = recent.length
+      ? `<ul class="profile-list">${recent
+          .map(
+            (session) =>
+              `<li>${escapeHtml((session.summary || "Archived session").split("\n")[0])}<div class="profile-meta">${session.chat_count || 0} chats · ${escapeHtml(
+                formatWhen(session.created_at || session.ended_at || "")
+              )}</div></li>`
+          )
+          .join("")}</ul>`
+      : '<p class="profile-empty">Past sessions appear here after you click <strong>End session</strong>.</p>';
+
+    profileContent.innerHTML = `
+      <div class="profile-section">
+        <div class="profile-name">${escapeHtml(profile.display_name || "Guest user")}</div>
+        <div class="profile-meta">User ID: ${escapeHtml(profile.user_id || getUserId())}</div>
+      </div>
+      <div class="profile-section">
+        <h4>Preferences</h4>
+        <div class="profile-grid">
+          <div class="profile-chip">Style: ${escapeHtml(prefs.response_style || "balanced")}</div>
+          <div class="profile-chip">Language: ${escapeHtml(prefs.language || "english")}</div>
+          <div class="profile-chip">Level: ${escapeHtml(prefs.technical_level || "intermediate")}</div>
+        </div>
+      </div>
+      <div class="profile-section">
+        <h4>Answer style</h4>
+        <div class="profile-grid">
+          <div class="profile-chip">${escapeHtml(style.preferred_answer_style || "balanced")}</div>
+          <div class="profile-chip">${style.likes_examples ? "Likes examples" : "Examples optional"}</div>
+          <div class="profile-chip">${style.likes_flowcharts ? "Likes diagrams" : "Diagrams optional"}</div>
+        </div>
+      </div>
+      <div class="profile-section">
+        <h4>Interests</h4>
+        ${renderTagList(profile.interests)}
+      </div>
+      <div class="profile-section">
+        <h4>Projects</h4>
+        ${renderTagList(profile.projects)}
+      </div>
+      <div class="profile-section">
+        <h4>Known facts</h4>
+        ${renderTagList(profile.facts)}
+      </div>
+      <div class="profile-section">
+        <h4>Frequent topics</h4>
+        ${renderTagList(profile.frequent_topics)}
+      </div>
+      <div class="profile-section">
+        <h4>Active session</h4>
+        ${currentHtml}
+      </div>
+      <div class="profile-section">
+        <h4>Recent archived sessions</h4>
+        ${recentHtml}
+      </div>
+      <div class="profile-actions">
+        <button type="button" class="toolbar-btn" id="end-session-btn">End session</button>
+        <button type="button" class="toolbar-btn" id="clear-chat-btn">Clear chat history</button>
+        <button type="button" class="toolbar-btn danger-btn" id="delete-memory-btn">Delete all my memory</button>
+      </div>
+    `;
+
+    document.getElementById("end-session-btn")?.addEventListener("click", endSessionFromProfile);
+    document.getElementById("clear-chat-btn")?.addEventListener("click", clearChatHistoryFromProfile);
+    document.getElementById("delete-memory-btn")?.addEventListener("click", deleteUserMemoryFromProfile);
+  }
+
+  async function endChatAwait(compactSnapshot) {
+    if (!sessionId || !chatId) return;
+    await fetch(`${API_BASE}/memory/session/chat-end`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_id: getUserId(),
+        session_id: sessionId,
+        chat_id: chatId,
+        chat_compact: compactSnapshot || "",
+      }),
+    }).catch(() => {});
+  }
+
+  async function endSessionFromProfile() {
+    const confirmed = await showConfirmDialog(
+      "End session?",
+      "This merges the current chat into your session summary and archives it for long-term memory.\n\nA new session will start afterward. Indexed documents are not affected.",
+      "End session"
+    );
+    if (!confirmed) return;
+
+    try {
+      upsertCurrentRecent();
+      await ensureSession();
+      await endChatAwait(chatCompact);
+      const res = await fetch(`${API_BASE}/memory/session/end`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: getUserId(),
+          session_id: sessionId,
+          chat_compact: chatCompact || "",
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `End session failed (${res.status})`);
+      }
+      localStorage.removeItem(SESSION_STORAGE_KEY);
+      sessionId = null;
+      chatCompact = "";
+      newChatId();
+      await ensureSession();
+      await refreshArchivedSessions();
+      setUploadToast("Session archived. A new session has started.", "success");
+      closeProfileModal();
+      await openProfileModal();
+    } catch (err) {
+      setUploadToast(err.message || "Could not end session.", "error");
+    }
+  }
+
+  async function clearChatHistoryFromProfile() {
+    const confirmed = await showConfirmDialog(
+      "Clear chat history?",
+      "This removes all messages in the current browser session and clears saved chat history from this device.\n\nYour long-term memory profile on the server is not affected.\n\nIndexed documents and RAG knowledge are not touched.",
+      "Clear chat"
+    );
+    if (!confirmed) return;
+
+    if (isGenerating) {
+      abortController?.abort();
+      setGenerating(false);
+      abortController = null;
+    }
+    hideStage();
+    endChatInBackground(chatCompact);
+    chatHistory.length = 0;
+    messageRecords.length = 0;
+    chatCompact = "";
+    pinnedSources = [];
+    newChatId();
+    clearPersistedChat();
+    showWelcome();
+    closeProfileModal();
+    input.focus();
+    setUploadToast("Chat history cleared on this device.", "");
+  }
+
+  async function deleteUserMemoryFromProfile() {
+    const confirmed = await showConfirmDialog(
+      "Delete all your memory?",
+      "This permanently deletes your profile, preferences, saved name, frequent topics, session summaries, and episodic memories for this user ID.\n\nThis does NOT delete indexed documents, PDFs, chunks, or embeddings in the knowledge base.\n\nChat history in this browser is kept unless you clear it separately.",
+      "Delete memory"
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch(`${API_BASE}/memory/user?user_id=${encodeURIComponent(getUserId())}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Delete failed (${res.status})`);
+      }
+      setUploadToast("Your memory profile was deleted. Documents and RAG data are unchanged.", "");
+      localStorage.removeItem(SESSION_STORAGE_KEY);
+      sessionId = null;
+      chatCompact = "";
+      newChatId();
+      await openProfileModal();
+    } catch (err) {
+      setUploadToast(err.message || "Could not delete memory.", "error");
+    }
+  }
+
+  async function openProfileModal() {
+    profileModal.hidden = false;
+    profileContent.innerHTML = '<p class="profile-empty">Loading profile...</p>';
+    try {
+      const res = await fetch(`${API_BASE}/memory/profile?user_id=${encodeURIComponent(getUserId())}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Failed to load profile (${res.status})`);
+      }
+      const profile = await res.json();
+      archivedSessions = profile.recent_sessions || [];
+      renderSidebarRecents();
+      renderProfileModal(profile);
+    } catch (err) {
+      profileContent.innerHTML = `<p class="profile-empty">${escapeHtml(err.message || "Could not load profile.")}</p>`;
+    }
   }
 
   function closeIngestModal() {
@@ -59,12 +490,96 @@
     }
   }
 
+  function getUserId() {
+    try {
+      let id = localStorage.getItem(USER_ID_STORAGE_KEY);
+      if (!id) {
+        id = (crypto.randomUUID && crypto.randomUUID()) || `user-${Date.now()}`;
+        localStorage.setItem(USER_ID_STORAGE_KEY, id);
+      }
+      return id;
+    } catch {
+      return "anonymous-local-user";
+    }
+  }
+
+  function newChatId() {
+    chatId = (crypto.randomUUID && crypto.randomUUID()) || `chat-${Date.now()}`;
+    chatCompact = "";
+    pinnedSources = [];
+    activeRecentId = chatId;
+    return chatId;
+  }
+
+  function getRoutingTurns() {
+    return chatHistory.slice(-4);
+  }
+
+  function persistSessionId() {
+    if (!sessionId) return;
+    try {
+      localStorage.setItem(
+        SESSION_STORAGE_KEY,
+        JSON.stringify({ sessionId, userId: getUserId(), savedAt: Date.now() })
+      );
+    } catch {
+      // Ignore storage errors.
+    }
+  }
+
+  async function ensureSession() {
+    if (sessionId) return sessionId;
+    try {
+      const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+      if (raw) {
+        const data = JSON.parse(raw);
+        if (data.sessionId && data.userId === getUserId()) {
+          sessionId = data.sessionId;
+          return sessionId;
+        }
+      }
+    } catch {
+      // Fall through to server start.
+    }
+
+    const res = await fetch(
+      `${API_BASE}/memory/session/start?user_id=${encodeURIComponent(getUserId())}`,
+      { method: "POST" }
+    );
+    if (!res.ok) {
+      return null;
+    }
+    const data = await res.json();
+    sessionId = data.session_id;
+    persistSessionId();
+    return sessionId;
+  }
+
+  function endChatInBackground(compactSnapshot) {
+    if (!sessionId || !chatId) return;
+    fetch(`${API_BASE}/memory/session/chat-end`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_id: getUserId(),
+        session_id: sessionId,
+        chat_id: chatId,
+        chat_compact: compactSnapshot || "",
+      }),
+    }).catch(() => {
+      // Best-effort merge; UI already moved on.
+    });
+  }
+
   function persistChat() {
     if (!chatPersistEnabled) return;
+    upsertCurrentRecent();
     try {
       const payload = {
         chatHistory: chatHistory.slice(-MAX_STORED_RECORDS),
         messageRecords: messageRecords.slice(-MAX_STORED_RECORDS),
+        chatId,
+        activeRecentId,
         savedAt: Date.now(),
       };
       localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(payload));
@@ -98,6 +613,14 @@
 
       const savedHistory = Array.isArray(data.chatHistory) ? data.chatHistory : [];
       chatHistory.push(...savedHistory.slice(-MAX_STORED_RECORDS));
+      if (data.chatId) {
+        chatId = data.chatId;
+        activeRecentId = data.activeRecentId || data.chatId;
+      } else {
+        newChatId();
+      }
+      updateChatTitle();
+      renderSidebarRecents();
       chatPersistEnabled = true;
       attachEditToLastUserMessage();
       chat.scrollTop = chat.scrollHeight;
@@ -174,14 +697,6 @@
     localStorage.setItem("rag-theme", theme);
   }
 
-  function escapeHtml(text) {
-    return String(text)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
-  }
-
   function renderMarkdownTables(text) {
     const lines = String(text).split("\n");
     const out = [];
@@ -222,8 +737,12 @@
     isGenerating = active;
     submitBtn.disabled = active;
     attachBtn.disabled = active;
-    stopBtn.hidden = !active;
-    submitBtn.hidden = active;
+    if (stopBtn) {
+      stopBtn.hidden = !active;
+    }
+    if (submitBtn) {
+      submitBtn.hidden = active;
+    }
     if (active) {
       clearUserEditActions();
     } else {
@@ -269,11 +788,23 @@
   }
 
   function newChat() {
-    if (isGenerating && abortController) abortController.abort();
+    if (isGenerating) {
+      abortController?.abort();
+      setGenerating(false);
+      abortController = null;
+    }
+    hideStage();
+
+    upsertCurrentRecent();
+    const compactSnapshot = chatCompact;
+    endChatInBackground(compactSnapshot);
     chatHistory.length = 0;
     messageRecords.length = 0;
+    newChatId();
     clearPersistedChat();
     showWelcome();
+    updateChatTitle();
+    renderSidebarRecents();
     input.focus();
   }
 
@@ -546,15 +1077,23 @@
     let finalData = null;
 
     try {
+      await ensureSession();
+      if (!chatId) newChatId();
+
       const res = await fetch(`${API_BASE}/query/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query: trimmed,
-          chat_history: chatHistory.slice(-10),
+          chat_compact: chatCompact || undefined,
+          routing_turns: getRoutingTurns(),
+          pinned_sources: pinnedSources.length ? pinnedSources : undefined,
+          session_id: sessionId || undefined,
+          chat_id: chatId || undefined,
           use_rag: useRag,
           use_cache: !options.skipCache,
           model: modelSelect?.value || undefined,
+          user_id: getUserId(),
         }),
         signal: abortController.signal,
       });
@@ -614,6 +1153,15 @@
         });
         chatHistory.push({ role: "user", content: trimmed });
         chatHistory.push({ role: "assistant", content: finalData.answer });
+        if (finalData.chat_compact) chatCompact = finalData.chat_compact;
+        if (Array.isArray(finalData.pinned_sources) && finalData.pinned_sources.length) {
+          pinnedSources = finalData.pinned_sources;
+        }
+        if (finalData.session_id) {
+          sessionId = finalData.session_id;
+          persistSessionId();
+        }
+        if (finalData.chat_id) chatId = finalData.chat_id;
         persistChat();
       } else if (streamedText) {
         addMessage(streamedText, "assistant", { mode: useRag ? "rag" : "direct" });
@@ -788,18 +1336,45 @@
   applyRagMode(savedRagMode !== "0");
   applyTheme(localStorage.getItem("rag-theme") ||
     (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"));
+  initSidebarCollapse();
+  setGenerating(false);
 
   ragToggle.addEventListener("change", () => applyRagMode(!ragToggle.checked));
   themeToggle.addEventListener("click", () => {
     applyTheme(html.getAttribute("data-theme") === "dark" ? "light" : "dark");
   });
   modelSelect?.addEventListener("change", () => selectModel(modelSelect.value));
+  sidebarCollapseBtn?.addEventListener("click", () => {
+    applySidebarCollapsed(!sidebar?.classList.contains("collapsed"));
+  });
+  sidebarExpandBtn?.addEventListener("click", () => {
+    applySidebarCollapsed(false);
+  });
   newChatBtn?.addEventListener("click", newChat);
-  exportBtn?.addEventListener("click", () => { exportMenu.hidden = !exportMenu.hidden; });
+  endSessionSidebarBtn?.addEventListener("click", endSessionFromProfile);
+  exportBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    exportMenu.hidden = !exportMenu.hidden;
+  });
+  document.addEventListener("click", (e) => {
+    if (!exportMenu || exportMenu.hidden) return;
+    if (e.target.closest(".export-wrap")) return;
+    exportMenu.hidden = true;
+  });
   document.getElementById("export-md")?.addEventListener("click", exportMarkdown);
   document.getElementById("export-pdf")?.addEventListener("click", exportPdf);
   document.getElementById("export-copy")?.addEventListener("click", copyAllChat);
   docsBtn?.addEventListener("click", openDocsPanel);
+  profileBtn?.addEventListener("click", openProfileModal);
+  profileClose?.addEventListener("click", closeProfileModal);
+  profileModal?.addEventListener("click", (e) => {
+    if (e.target === profileModal) closeProfileModal();
+  });
+  confirmCancel?.addEventListener("click", () => closeConfirmDialog(false));
+  confirmOk?.addEventListener("click", () => closeConfirmDialog(true));
+  confirmModal?.addEventListener("click", (e) => {
+    if (e.target === confirmModal) closeConfirmDialog(false);
+  });
   docsClose?.addEventListener("click", closeDocsPanel);
   docsPanel?.addEventListener("click", (e) => {
     if (e.target === docsPanel) closeDocsPanel();
@@ -811,6 +1386,11 @@
   });
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
+      if (!confirmModal.hidden) {
+        closeConfirmDialog(false);
+        return;
+      }
+      closeProfileModal();
       closeIngestModal();
       closeDocsPanel();
       if (exportMenu) exportMenu.hidden = true;
@@ -853,6 +1433,13 @@
   if (!restoreChat()) {
     showWelcome();
   }
+  if (!chatId) {
+    newChatId();
+  }
+  ensureSession().catch(() => {});
+  refreshArchivedSessions().catch(() => {});
+  updateChatTitle();
+  renderSidebarRecents();
 
   checkHealth();
   loadModels();

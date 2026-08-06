@@ -34,6 +34,10 @@ htmlcov/
 my_chroma_db/
 vector_db_data/
 test_chroma_db/
+user_memory.db
+user_memory_db/
+test_user_memory.db
+test_user_memory_chroma/
 
 # --- Document libraries (local user data; not source code) ---
 Docs/

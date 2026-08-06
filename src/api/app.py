@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
 from config.settings import settings
-from src.api.routes import ingest, query, eval, health, models
+from src.api.routes import ingest, query, eval, health, models, memory
 from src.api.dependencies import get_rag_service
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
@@ -32,6 +32,7 @@ app.include_router(ingest.router)
 app.include_router(query.router)
 app.include_router(eval.router)
 app.include_router(models.router)
+app.include_router(memory.router)
 
 
 @app.get("/")

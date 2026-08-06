@@ -82,12 +82,28 @@ class Settings(BaseSettings):
     MAX_QUERY_LENGTH: int = 4000
     MAX_QUERY_WARN_LENGTH: int = 3600
 
+    # Long-term user memory (separate from RAG knowledge base)
+    ENABLE_USER_MEMORY: bool = True
+    USER_MEMORY_DB_PATH: str = Field(default="user_memory.db", description="SQLite path for user profiles")
+    USER_MEMORY_CHROMA_PATH: str = Field(
+        default="user_memory_db",
+        description="Chroma path for episodic conversation summaries",
+    )
+    USER_MEMORY_TOP_K: int = 5
+    USER_MEMORY_MIN_MESSAGES_ARCHIVE: int = 2
+    USER_MEMORY_MAX_PROFILE_ITEMS: int = 20
+
+    # Conversation hierarchy: user → session → chat
+    CHAT_COMPACT_MAX_CHARS: int = 1200
+    SESSION_COMPACT_MAX_CHARS: int = 2400
+    MAX_ROUTING_TURNS: int = 2
+
     # Security & Access Control
     ENABLE_RBAC: bool = True
     DEFAULT_USER_ROLES: List[str] = ["user"]
     SECRET_KEY: str = "production-secret-key-change-in-env"
 
-    @field_validator("VECTOR_DB_PATH", "DOCS_DIR", "UPLOADED_DOCS_DIR", "TEMP_DOC_DIR")
+    @field_validator("VECTOR_DB_PATH", "DOCS_DIR", "UPLOADED_DOCS_DIR", "TEMP_DOC_DIR", "USER_MEMORY_DB_PATH", "USER_MEMORY_CHROMA_PATH")
     @classmethod
     def resolve_relative_paths(cls, value: str) -> str:
         return _resolve_project_path(value)

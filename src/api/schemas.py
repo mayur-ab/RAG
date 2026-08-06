@@ -39,6 +39,94 @@ class QueryRequest(BaseModel):
     use_rag: bool = Field(default=True, description="When false, skip retrieval and answer with the LLM only")
     use_cache: bool = Field(default=True, description="Return cached response for identical queries")
     model: Optional[str] = Field(default=None, description="Optional Ollama model override for this request")
+    user_id: Optional[str] = Field(
+        default=None,
+        description="Stable user identifier for long-term memory personalization",
+    )
+    session_id: Optional[str] = Field(default=None, description="Active user session identifier")
+    chat_id: Optional[str] = Field(default=None, description="Current chat thread within the session")
+    chat_compact: Optional[str] = Field(
+        default=None,
+        description="Rolling compact summary for this chat (ephemeral, not stored server-side)",
+    )
+    routing_turns: Optional[List[ChatMessage]] = Field(
+        default=None,
+        description="Last 1-2 turns for follow-up routing only — never sent verbatim to the LLM",
+    )
+    pinned_sources: Optional[List[str]] = Field(
+        default=None,
+        description="Source paths pinned from earlier turns in this chat for follow-up retrieval",
+    )
+
+
+class EndChatRequest(BaseModel):
+    user_id: str
+    session_id: str
+    chat_id: str
+    chat_compact: str = ""
+
+
+class EndSessionRequest(BaseModel):
+    user_id: str
+    session_id: str
+    chat_compact: Optional[str] = ""
+
+
+class SessionStartResponse(BaseModel):
+    session_id: str
+    user_id: str
+    status: str = "active"
+
+
+class EndChatResponse(BaseModel):
+    merged: bool
+    session_id: str
+    chat_id: str
+    reason: Optional[str] = None
+    chat_count: int = 0
+
+
+class EndSessionResponse(BaseModel):
+    archived: bool
+    session_id: str
+    summary: Optional[str] = None
+    chat_count: int = 0
+    reason: Optional[str] = None
+
+
+class ArchiveSessionRequest(BaseModel):
+    user_id: str = Field(..., description="Stable user identifier")
+    chat_history: List[ChatMessage] = Field(default_factory=list, description="Conversation to archive")
+
+
+class ArchiveSessionResponse(BaseModel):
+    archived: bool
+    reason: Optional[str] = None
+    archive_id: Optional[str] = None
+    summary: Optional[str] = None
+    message_count: int = 0
+
+
+class UserProfileResponse(BaseModel):
+    user_id: str
+    display_name: str = ""
+    preferences: Dict[str, Any]
+    interests: List[str]
+    projects: List[str]
+    facts: List[str]
+    style: Dict[str, Any]
+    frequent_topics: List[str] = Field(default_factory=list)
+    recent_sessions: List[Dict[str, Any]] = Field(default_factory=list)
+    active_session: Optional[Dict[str, Any]] = None
+
+
+class DeleteUserMemoryResponse(BaseModel):
+    user_id: str
+    deleted: bool = True
+    profiles_deleted: int = 0
+    topics_deleted: int = 0
+    archives_deleted: int = 0
+    episodic_memories_deleted: int = 0
 
 
 class QueryResponse(BaseModel):
@@ -58,6 +146,13 @@ class QueryResponse(BaseModel):
     grounded: bool = Field(default=True, description="True when answer is grounded in documents")
     not_in_documents: bool = Field(default=False, description="True when answer is not from indexed documents")
     retrieved_context: str = Field(default="", description="Retrieved chunk text passed to the LLM (for eval/debug)")
+    session_id: Optional[str] = None
+    chat_id: Optional[str] = None
+    chat_compact: str = Field(default="", description="Updated rolling compact for the next turn in this chat")
+    pinned_sources: List[str] = Field(
+        default_factory=list,
+        description="Pinned document sources to carry into the next turn",
+    )
 
 
 class UploadResponse(BaseModel):

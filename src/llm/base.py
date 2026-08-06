@@ -12,7 +12,8 @@ Rules:
 6. End your response after the answer text. Nothing after the final sentence.
 7. If the answer cannot be found in the context, say exactly:
    "I could not find that information in the provided knowledge base."
-8. Do not fabricate information."""
+8. Do not fabricate information.
+9. Only refer to prior conversation when it appears in the "Conversation so far" section. Never claim something was discussed in a previous conversation unless it is explicitly listed there."""
 
 CHAT_SYSTEM_PROMPT = """You are a helpful assistant. Answer clearly and concisely.
 Use your general knowledge. If you are unsure, say so."""
