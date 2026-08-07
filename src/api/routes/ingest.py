@@ -124,17 +124,6 @@ def list_documents(service: RAGPipelineService = Depends(get_rag_service)):
     }
 
 
-@router.get("/documents/indexed")
-def list_indexed_documents(service: RAGPipelineService = Depends(get_rag_service)):
-    indexed = service.list_indexed_documents()
-    stats = service.vector_store.get_stats()
-    return {
-        "total_vectors": stats.get("total_vectors", 0),
-        "document_count": len(indexed),
-        "documents": indexed,
-    }
-
-
 def _chunking_for_upload(filename: str) -> str:
     ext = Path(filename).suffix.lower()
     if ext in {".pdf", ".doc", ".csv", ".xlsx", ".xls"}:

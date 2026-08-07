@@ -25,6 +25,41 @@ class MockLLMProvider(BaseLLMProvider):
             if legacy:
                 user_block = f"Context:\n{context}\n\nPrior exchange:\n{legacy}\n\nCurrent question: {prompt}"
 
+        if "Create a numbered outline" in prompt or "detailed outlines for long research" in (system_prompt or ""):
+            return {
+                "answer": (
+                    "1. Introduction\n"
+                    "2. RAG Fundamentals\n"
+                    "3. Chunking Strategies\n"
+                    "4. Embeddings and Retrieval\n"
+                    "5. Re-ranking\n"
+                    "6. Conclusion"
+                ),
+                "model": "mock-grounded-llm",
+                "prompt_tokens": len(prompt.split()),
+                "completion_tokens": 24,
+            }
+
+        if "Write section" in prompt or "write ONE section" in (system_prompt or "").lower():
+            title = "Section"
+            for line in prompt.splitlines():
+                if line.startswith("Write section") or "section titled" in line.lower():
+                    title = line.split(":")[-1].strip().strip("'")
+                    break
+            snippet = ""
+            if context and context.strip():
+                lines = [ln.strip() for ln in context.split("\n") if ln.strip() and not ln.startswith("[")]
+                snippet = lines[0][:200] if lines else "Relevant material from the knowledge base."
+            else:
+                snippet = "Overview based on available reference material."
+            answer = f"## {title}\n\n{snippet} This section expands on {title.lower()} with grounded details from the indexed documents."
+            return {
+                "answer": answer,
+                "model": "mock-grounded-llm",
+                "prompt_tokens": len(prompt.split()) + len(context.split()),
+                "completion_tokens": len(answer.split()),
+            }
+
         if not context or not context.strip():
             return {
                 "answer": "I could not find that information in the provided knowledge base.",
@@ -66,6 +101,17 @@ class MockLLMProvider(BaseLLMProvider):
         max_tokens: int = 1000,
     ) -> Dict[str, Any]:
         if "Return ONLY valid JSON" in (system_prompt or ""):
+            if "classify enterprise documents" in (system_prompt or "").lower():
+                return {
+                    "answer": (
+                        '{"category":"Technical","subcategory":"RAG",'
+                        '"tags":["rag","chromadb","retrieval","embeddings"],'
+                        '"summary":"Architecture guide for local RAG systems."}'
+                    ),
+                    "model": "mock-chat-llm",
+                    "prompt_tokens": len(prompt.split()),
+                    "completion_tokens": 24,
+                }
             return {
                 "answer": (
                     '{"preferences":["likes detailed explanations"],'
@@ -102,10 +148,24 @@ class MockLLMProvider(BaseLLMProvider):
             }
         if "summarize conversations" in (system_prompt or "").lower() or prompt.strip().endswith("Summary:"):
             return {
-                "answer": "User discussed RAG architecture, ChromaDB, and long-term memory design.",
+                "answer": "This section covered key RAG concepts and implementation details from the knowledge base.",
                 "model": "mock-chat-llm",
                 "prompt_tokens": len(prompt.split()),
                 "completion_tokens": 16,
+            }
+        if "Summarize the following document section" in (system_prompt or ""):
+            return {
+                "answer": "Prior section introduced core concepts and relevant background from the documents.",
+                "model": "mock-chat-llm",
+                "prompt_tokens": len(prompt.split()),
+                "completion_tokens": 12,
+            }
+        if "name groups of similar documents" in (system_prompt or "").lower():
+            return {
+                "answer": "RAG & Retrieval",
+                "model": "mock-chat-llm",
+                "prompt_tokens": len(prompt.split()),
+                "completion_tokens": 4,
             }
         answer = f"[Direct mode] {prompt}"
         if chat_history:

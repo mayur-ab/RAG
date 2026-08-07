@@ -1,4 +1,5 @@
 from typing import Dict, Any, List
+
 from config.logging_config import logger
 
 
@@ -11,9 +12,9 @@ class QueryTelemetryLogger:
         retrieved_count: int,
         reranked_count: int,
         latency_breakdown: Dict[str, float],
-        token_usage: Dict[str, int],
+        token_usage: Dict[str, Any],
         model: str,
-        user_roles: List[str]
+        user_roles: List[str],
     ):
         payload = {
             "query": query,
@@ -22,6 +23,6 @@ class QueryTelemetryLogger:
             "latency_breakdown": latency_breakdown,
             "token_usage": token_usage,
             "model": model,
-            "user_roles": user_roles
+            "user_roles": user_roles,
         }
         logger.info(f"Query executed: '{query[:50]}...'", extra={"payload": payload})

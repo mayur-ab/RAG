@@ -229,7 +229,7 @@
 
     .sidebar-item:hover { background: var(--surface-hover); color: var(--text); }
     .sidebar-item.active { background: var(--surface-hover); color: var(--text); }
-    .sidebar-item.session-item { font-size: 0.74rem; opacity: 0.85; }
+    .sidebar-item.session-item { font-size: 0.74rem; cursor: pointer; }
 
     .sidebar-footer {
       border-top: 1px solid var(--border);
@@ -892,7 +892,7 @@
     }
 
     .panel-card, .modal-card {
-      width: min(720px, 100%);
+      width: min(920px, 100%);
       max-height: 80vh;
       overflow: auto;
       background: var(--surface);
@@ -917,6 +917,93 @@
     .doc-title { font-weight: 600; font-size: 0.88rem; }
     .doc-meta { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.15rem; }
     .doc-path { font-size: 0.68rem; color: var(--text-muted); margin-top: 0.15rem; word-break: break-all; }
+
+    .docs-layout {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      gap: 1rem;
+      min-height: 360px;
+    }
+    @media (max-width: 720px) {
+      .docs-layout { grid-template-columns: 1fr; }
+    }
+    .docs-browse {
+      border-right: 1px solid var(--border);
+      padding-right: 0.75rem;
+      max-height: 60vh;
+      overflow: auto;
+    }
+    .docs-main {
+      max-height: 60vh;
+      overflow: auto;
+    }
+    .docs-search {
+      width: 100%;
+      padding: 0.45rem 0.6rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-hover);
+      color: var(--text);
+      font-size: 0.82rem;
+      margin-bottom: 0.6rem;
+    }
+    .docs-section-title {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+      margin: 0.75rem 0 0.35rem;
+    }
+    .docs-cat-btn, .docs-sub-btn, .docs-tag-btn {
+      display: flex;
+      justify-content: space-between;
+      width: 100%;
+      text-align: left;
+      padding: 0.35rem 0.5rem;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text);
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+    .docs-cat-btn:hover, .docs-sub-btn:hover, .docs-tag-btn:hover {
+      background: var(--surface-hover);
+    }
+    .docs-cat-btn.active, .docs-sub-btn.active, .docs-tag-btn.active {
+      background: var(--surface-hover);
+      font-weight: 600;
+    }
+    .docs-sub-btn { padding-left: 1rem; font-size: 0.76rem; }
+    .docs-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      margin-bottom: 0.75rem;
+    }
+    .docs-actions .toolbar-btn { font-size: 0.72rem; padding: 0.3rem 0.55rem; }
+    .doc-tags { margin-top: 0.25rem; }
+    .doc-tag {
+      display: inline-block;
+      font-size: 0.65rem;
+      padding: 0.1rem 0.4rem;
+      border-radius: 999px;
+      background: var(--surface-hover);
+      border: 1px solid var(--border);
+      margin-right: 0.25rem;
+      color: var(--text-muted);
+    }
+    .doc-summary {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 0.2rem;
+      line-height: 1.4;
+    }
+    .docs-empty, .docs-loading {
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      padding: 1rem 0;
+    }
 
     .profile-section { margin-bottom: 1rem; }
     .profile-section h4 {
@@ -1152,12 +1239,20 @@
   </div>
 
   <div class="panel" id="docs-panel" hidden>
-    <div class="panel-card">
+    <div class="panel-card docs-panel-card">
       <div class="panel-header">
-        <h3>Indexed documents</h3>
+        <h3>Knowledge library</h3>
         <button type="button" class="toolbar-btn" id="docs-close">Close</button>
       </div>
-      <div id="docs-list"></div>
+      <div class="docs-actions">
+        <button type="button" class="toolbar-btn" id="docs-classify-btn">Classify all</button>
+        <button type="button" class="toolbar-btn" id="docs-cluster-btn">Run clustering</button>
+        <button type="button" class="toolbar-btn" id="docs-clear-filter-btn">Clear filters</button>
+      </div>
+      <div class="docs-layout">
+        <aside class="docs-browse" id="docs-browse"></aside>
+        <div class="docs-main" id="docs-list"></div>
+      </div>
     </div>
   </div>
 

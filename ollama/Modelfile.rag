@@ -1,0 +1,8 @@
+# Custom Ollama model with 32K context for local RAG.
+# Create:  ollama create rag-llama -f ollama/Modelfile.rag
+# Use in .env: OLLAMA_LLM_MODEL=rag-llama
+
+FROM llama3.1:8b
+
+PARAMETER num_ctx 32768
+PARAMETER temperature 0

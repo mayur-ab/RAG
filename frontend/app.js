@@ -34,7 +34,11 @@
   const reindexBtn = document.getElementById("reindex-btn");
   const docsPanel = document.getElementById("docs-panel");
   const docsList = document.getElementById("docs-list");
+  const docsBrowse = document.getElementById("docs-browse");
   const docsClose = document.getElementById("docs-close");
+  const docsClassifyBtn = document.getElementById("docs-classify-btn");
+  const docsClusterBtn = document.getElementById("docs-cluster-btn");
+  const docsClearFilterBtn = document.getElementById("docs-clear-filter-btn");
   const ingestModal = document.getElementById("ingest-modal");
   const ingestBar = document.getElementById("ingest-bar");
   const ingestStatus = document.getElementById("ingest-status");
@@ -74,6 +78,7 @@
   let abortController = null;
   let isGenerating = false;
   let ingestEventSource = null;
+  let docsFilter = { category: null, subcategory: null, tag: null, search: "" };
   let confirmResolver = null;
 
   function showConfirmDialog(title, message, confirmLabel = "Confirm") {
@@ -152,6 +157,52 @@
     return text.length > 52 ? `${text.slice(0, 52)}…` : text;
   }
 
+  function getChatMessageCount() {
+    return messageRecords.filter((m) => m.role === "user" || m.role === "assistant").length;
+  }
+
+  function buildCompactSnapshotForEnd() {
+    const compact = (chatCompact || "").trim();
+    if (compact) return compact;
+    const users = messageRecords.filter((m) => m.role === "user");
+    const assistants = messageRecords.filter((m) => m.role === "assistant");
+    if (!users.length) return "";
+    const topics = users
+      .slice(0, 3)
+      .map((m) => m.content.trim().slice(0, 120))
+      .join("; ");
+    const lastAnswer = assistants.length
+      ? assistants[assistants.length - 1].content.trim().slice(0, 400)
+      : "";
+    if (lastAnswer) {
+      return `User discussed: ${topics}. Latest assistant response covered: ${lastAnswer}`;
+    }
+    return `User discussed: ${topics}.`;
+  }
+
+  function formatSessionLabel(session) {
+    const raw = (session.summary || "").split("\n")[0].trim();
+    if (raw && !/^Session\b/i.test(raw)) {
+      return raw.length > 56 ? `${raw.slice(0, 56)}…` : raw;
+    }
+    const count = session.chat_count || 0;
+    const when = formatWhen(session.created_at || session.ended_at || "").split(",")[0];
+    if (count > 0) return `${count} chat(s) - ${when || "archived"}`;
+    return when ? `Session - ${when}` : "Archived session";
+  }
+
+  function dedupeRecents(recents) {
+    const byId = new Map();
+    for (const item of recents) {
+      if (!item?.id) continue;
+      const existing = byId.get(item.id);
+      if (!existing || (item.updatedAt || 0) >= (existing.updatedAt || 0)) {
+        byId.set(item.id, item);
+      }
+    }
+    return [...byId.values()].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  }
+
   function updateChatTitle() {
     if (chatTitleEl) chatTitleEl.textContent = deriveChatTitle();
   }
@@ -160,7 +211,7 @@
     try {
       const raw = localStorage.getItem(RECENTS_STORAGE_KEY);
       const data = raw ? JSON.parse(raw) : [];
-      return Array.isArray(data) ? data : [];
+      return dedupeRecents(Array.isArray(data) ? data : []);
     } catch {
       return [];
     }
@@ -168,7 +219,7 @@
 
   function saveRecents(recents) {
     try {
-      localStorage.setItem(RECENTS_STORAGE_KEY, JSON.stringify(recents.slice(0, MAX_RECENTS)));
+      localStorage.setItem(RECENTS_STORAGE_KEY, JSON.stringify(dedupeRecents(recents).slice(0, MAX_RECENTS)));
     } catch {
       // Ignore quota errors.
     }
@@ -223,11 +274,17 @@
     }
     sidebarSessionsEl.innerHTML = archivedSessions
       .map((session) => {
-        const label = (session.summary || "Archived session").split("\n")[0];
-        const short = label.length > 56 ? `${label.slice(0, 56)}…` : label;
-        return `<button type="button" class="sidebar-item session-item" title="${escapeHtml(session.summary || "")}" disabled>${escapeHtml(short)}</button>`;
+        const short = formatSessionLabel(session);
+        return `<button type="button" class="sidebar-item session-item" data-session-id="${escapeHtml(session.session_id || "")}" title="${escapeHtml(session.summary || short)}">${escapeHtml(short)}</button>`;
       })
       .join("");
+    sidebarSessionsEl.querySelectorAll("[data-session-id]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const session = archivedSessions.find((s) => s.session_id === btn.dataset.sessionId);
+        const detail = session?.summary || "No summary stored for this session.";
+        setUploadToast(detail.length > 120 ? `${detail.slice(0, 120)}…` : detail, "");
+      });
+    });
   }
 
   async function refreshArchivedSessions() {
@@ -293,7 +350,7 @@
       ? `<ul class="profile-list">${recent
           .map(
             (session) =>
-              `<li>${escapeHtml((session.summary || "Archived session").split("\n")[0])}<div class="profile-meta">${session.chat_count || 0} chats · ${escapeHtml(
+              `<li>${escapeHtml(formatSessionLabel(session))}<div class="profile-meta">${session.chat_count || 0} chats · ${escapeHtml(
                 formatWhen(session.created_at || session.ended_at || "")
               )}</div></li>`
           )
@@ -359,6 +416,7 @@
 
   async function endChatAwait(compactSnapshot) {
     if (!sessionId || !chatId) return;
+    const snapshot = compactSnapshot || buildCompactSnapshotForEnd();
     await fetch(`${API_BASE}/memory/session/chat-end`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -366,7 +424,8 @@
         user_id: getUserId(),
         session_id: sessionId,
         chat_id: chatId,
-        chat_compact: compactSnapshot || "",
+        chat_compact: snapshot,
+        message_count: getChatMessageCount(),
       }),
     }).catch(() => {});
   }
@@ -382,14 +441,18 @@
     try {
       upsertCurrentRecent();
       await ensureSession();
-      await endChatAwait(chatCompact);
+      const compactSnapshot = buildCompactSnapshotForEnd();
+      const messageCount = getChatMessageCount();
+      await endChatAwait(compactSnapshot);
       const res = await fetch(`${API_BASE}/memory/session/end`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           user_id: getUserId(),
           session_id: sessionId,
-          chat_compact: chatCompact || "",
+          chat_compact: compactSnapshot,
+          message_count: messageCount,
+          fallback_summary: compactSnapshot || deriveChatTitle(),
         }),
       });
       if (!res.ok) {
@@ -404,7 +467,6 @@
       await refreshArchivedSessions();
       setUploadToast("Session archived. A new session has started.", "success");
       closeProfileModal();
-      await openProfileModal();
     } catch (err) {
       setUploadToast(err.message || "Could not end session.", "error");
     }
@@ -557,6 +619,7 @@
 
   function endChatInBackground(compactSnapshot) {
     if (!sessionId || !chatId) return;
+    const snapshot = compactSnapshot || buildCompactSnapshotForEnd();
     fetch(`${API_BASE}/memory/session/chat-end`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -564,7 +627,8 @@
         user_id: getUserId(),
         session_id: sessionId,
         chat_id: chatId,
-        chat_compact: compactSnapshot || "",
+        chat_compact: snapshot,
+        message_count: getChatMessageCount(),
       }),
     }).catch(() => {
       // Best-effort merge; UI already moved on.
@@ -606,6 +670,13 @@
       chatHistory.length = 0;
       messageRecords.length = 0;
 
+      if (data.chatId) {
+        chatId = data.chatId;
+        activeRecentId = data.activeRecentId || data.chatId;
+      } else {
+        newChatId();
+      }
+
       records.forEach((record) => {
         if (!record?.content || !record?.role) return;
         addMessage(record.content, record.role, record.meta || {});
@@ -613,15 +684,10 @@
 
       const savedHistory = Array.isArray(data.chatHistory) ? data.chatHistory : [];
       chatHistory.push(...savedHistory.slice(-MAX_STORED_RECORDS));
-      if (data.chatId) {
-        chatId = data.chatId;
-        activeRecentId = data.activeRecentId || data.chatId;
-      } else {
-        newChatId();
-      }
       updateChatTitle();
-      renderSidebarRecents();
       chatPersistEnabled = true;
+      upsertCurrentRecent();
+      renderSidebarRecents();
       attachEditToLastUserMessage();
       chat.scrollTop = chat.scrollHeight;
       return messageRecords.length > 0;
@@ -861,11 +927,29 @@
       div.appendChild(modeEl);
     }
 
+    if (extras.mode === "long_document" && role === "assistant") {
+      const modeEl = document.createElement("div");
+      modeEl.className = "meta-mode";
+      const sections = extras.long_document?.sections;
+      modeEl.textContent = sections
+        ? `Long document · ${sections} sections (hierarchical generation)`
+        : "Long document · hierarchical generation";
+      div.appendChild(modeEl);
+    }
+
     if (extras.model) {
       const meta = document.createElement("div");
       meta.className = "meta";
       const modePrefix = extras.mode === "direct" ? "direct · " : "";
-      meta.textContent = `${modePrefix}${extras.model} · ${extras.latency?.total_seconds ?? "?"}s`;
+      let metaText = `${modePrefix}${extras.model} · ${extras.latency?.total_seconds ?? "?"}s`;
+      const tu = extras.token_usage;
+      if (tu?.prompt_tokens && tu?.context_window) {
+        metaText += ` · ctx ${tu.prompt_tokens.toLocaleString()}/${tu.context_window.toLocaleString()}`;
+        if (tu.context_used_percent != null) {
+          metaText += ` (${tu.context_used_percent}%)`;
+        }
+      }
+      meta.textContent = metaText;
       div.appendChild(meta);
     }
 
@@ -1064,6 +1148,8 @@
     }
 
     if (!options.skipUserBubble) {
+      await ensureSession();
+      if (!chatId) newChatId();
       addMessage(trimmed, "user");
     }
 
@@ -1077,7 +1163,7 @@
     let finalData = null;
 
     try {
-      await ensureSession();
+      if (!sessionId) await ensureSession();
       if (!chatId) newChatId();
 
       const res = await fetch(`${API_BASE}/query/stream`, {
@@ -1146,7 +1232,9 @@
           match_percent: finalData.match_percent,
           model: finalData.model,
           latency: finalData.latency,
+          token_usage: finalData.token_usage,
           mode: finalData.mode,
+          long_document: finalData.long_document,
           cached: finalData.cached,
           grounded: finalData.grounded,
           not_in_documents: finalData.not_in_documents,
@@ -1161,7 +1249,6 @@
           sessionId = finalData.session_id;
           persistSessionId();
         }
-        if (finalData.chat_id) chatId = finalData.chat_id;
         persistChat();
       } else if (streamedText) {
         addMessage(streamedText, "assistant", { mode: useRag ? "rag" : "direct" });
@@ -1272,30 +1359,175 @@
     }
   }
 
-  async function openDocsPanel() {
-    docsPanel.hidden = false;
-    docsList.innerHTML = '<div class="docs-loading">Loading indexed documents...</div>';
-    try {
-      const res = await fetch(`${API_BASE}/documents/indexed`);
-      const data = await res.json();
-      if (!data.documents?.length) {
-        docsList.innerHTML = '<div class="docs-empty">No indexed documents yet.</div>';
-        return;
+  function renderDocsBrowse(tree) {
+    if (!docsBrowse) return;
+    const parts = [];
+    parts.push('<input type="search" class="docs-search" id="docs-search-input" placeholder="Search documents..." />');
+    parts.push(`<div class="docs-section-title">Categories (${tree.total_indexed || 0} docs)</div>`);
+
+    const allActive = !docsFilter.category && !docsFilter.subcategory && !docsFilter.tag;
+    parts.push(
+      `<button type="button" class="docs-cat-btn${allActive ? " active" : ""}" data-cat="">All documents</button>`
+    );
+    if (tree.unclassified > 0) {
+      const uncActive = docsFilter.category === "Uncategorized";
+      parts.push(
+        `<button type="button" class="docs-cat-btn${uncActive ? " active" : ""}" data-cat="Uncategorized">Uncategorized <span>${tree.unclassified}</span></button>`
+      );
+    }
+    for (const cat of tree.categories || []) {
+      const catActive = docsFilter.category === cat.name && !docsFilter.subcategory;
+      parts.push(
+        `<button type="button" class="docs-cat-btn${catActive ? " active" : ""}" data-cat="${escapeHtml(cat.name)}">📁 ${escapeHtml(cat.name)} <span>${cat.count}</span></button>`
+      );
+      if (docsFilter.category === cat.name) {
+        for (const sub of cat.subcategories || []) {
+          const subActive = docsFilter.subcategory === sub.name;
+          parts.push(
+            `<button type="button" class="docs-sub-btn${subActive ? " active" : ""}" data-sub="${escapeHtml(sub.name)}">${escapeHtml(sub.name)} <span>${sub.count}</span></button>`
+          );
+        }
       }
-      docsList.innerHTML = data.documents.map((doc) => {
-        const lastIngested = doc.updated_at
-          ? new Date(doc.updated_at).toLocaleString()
-          : "Unknown";
-        return `
+    }
+    if (tree.tags?.length) {
+      parts.push('<div class="docs-section-title">Tags</div>');
+      for (const tag of tree.tags.slice(0, 20)) {
+        const tagActive = docsFilter.tag === tag.name;
+        parts.push(
+          `<button type="button" class="docs-tag-btn${tagActive ? " active" : ""}" data-tag="${escapeHtml(tag.name)}">#${escapeHtml(tag.name)} <span>${tag.count}</span></button>`
+        );
+      }
+    }
+    docsBrowse.innerHTML = parts.join("");
+
+    const searchInput = document.getElementById("docs-search-input");
+    if (searchInput) {
+      searchInput.value = docsFilter.search || "";
+      searchInput.addEventListener("input", () => {
+        docsFilter.search = searchInput.value.trim();
+        loadDocsList();
+      });
+    }
+    docsBrowse.querySelectorAll(".docs-cat-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        docsFilter.category = btn.dataset.cat || null;
+        docsFilter.subcategory = null;
+        docsFilter.tag = null;
+        openDocsPanel();
+      });
+    });
+    docsBrowse.querySelectorAll(".docs-sub-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        docsFilter.subcategory = btn.dataset.sub || null;
+        docsFilter.tag = null;
+        openDocsPanel();
+      });
+    });
+    docsBrowse.querySelectorAll(".docs-tag-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        docsFilter.tag = btn.dataset.tag || null;
+        docsFilter.category = null;
+        docsFilter.subcategory = null;
+        openDocsPanel();
+      });
+    });
+  }
+
+  function renderDocsList(documents) {
+    if (!documents?.length) {
+      docsList.innerHTML = '<div class="docs-empty">No documents match this filter.</div>';
+      return;
+    }
+    docsList.innerHTML = documents.map((doc) => {
+      const lastIngested = doc.updated_at
+        ? new Date(doc.updated_at).toLocaleString()
+        : "Unknown";
+      const tags = (doc.tags || [])
+        .map((t) => `<span class="doc-tag">#${escapeHtml(t)}</span>`)
+        .join("");
+      const catLabel = [doc.category, doc.subcategory].filter(Boolean).join(" › ");
+      const cluster = doc.cluster_label
+        ? ` · Collection: ${escapeHtml(doc.cluster_label)}`
+        : "";
+      return `
         <div class="doc-row">
           <div class="doc-title">${escapeHtml(doc.title || doc.source.split("/").pop())}</div>
-          <div class="doc-meta">${doc.chunk_count} chunks · ${escapeHtml(doc.status)} · Last indexed: ${escapeHtml(lastIngested)}</div>
+          <div class="doc-meta">${escapeHtml(catLabel || "Uncategorized")}${cluster} · ${doc.chunk_count} chunks · ${escapeHtml(lastIngested)}</div>
+          ${doc.summary ? `<div class="doc-summary">${escapeHtml(doc.summary)}</div>` : ""}
+          ${tags ? `<div class="doc-tags">${tags}</div>` : ""}
           <div class="doc-path">${escapeHtml(doc.source)}</div>
         </div>
       `;
-      }).join("");
+    }).join("");
+  }
+
+  async function loadDocsList() {
+    const params = new URLSearchParams();
+    if (docsFilter.category) params.set("category", docsFilter.category);
+    if (docsFilter.subcategory) params.set("subcategory", docsFilter.subcategory);
+    if (docsFilter.tag) params.set("tag", docsFilter.tag);
+    if (docsFilter.search) params.set("search", docsFilter.search);
+    const qs = params.toString();
+    docsList.innerHTML = '<div class="docs-loading">Loading documents...</div>';
+    const res = await fetch(`${API_BASE}/documents/indexed${qs ? `?${qs}` : ""}`);
+    const data = await res.json();
+    renderDocsList(data.documents || []);
+  }
+
+  async function openDocsPanel() {
+    docsPanel.hidden = false;
+    docsBrowse.innerHTML = '<div class="docs-loading">Loading categories...</div>';
+    docsList.innerHTML = '<div class="docs-loading">Loading documents...</div>';
+    try {
+      const [treeRes] = await Promise.all([
+        fetch(`${API_BASE}/documents/categories`),
+        loadDocsList(),
+      ]);
+      const tree = await treeRes.json();
+      renderDocsBrowse(tree);
     } catch (err) {
-      docsList.innerHTML = `<div class="docs-empty">Failed to load: ${escapeHtml(err.message)}</div>`;
+      docsBrowse.innerHTML = `<div class="docs-empty">Failed to load: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  async function classifyAllDocuments() {
+    docsClassifyBtn.disabled = true;
+    docsClassifyBtn.textContent = "Classifying...";
+    try {
+      const res = await fetch(`${API_BASE}/documents/classify?only_missing=true`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Classification failed");
+      setUploadToast(
+        `Classified ${data.classified} docs (${data.skipped} skipped, ${data.failed} failed)`,
+        data.failed ? "error" : "success"
+      );
+      await openDocsPanel();
+    } catch (err) {
+      setUploadToast(err.message, "error");
+    } finally {
+      docsClassifyBtn.disabled = false;
+      docsClassifyBtn.textContent = "Classify all";
+    }
+  }
+
+  async function clusterDocuments() {
+    docsClusterBtn.disabled = true;
+    docsClusterBtn.textContent = "Clustering...";
+    try {
+      const res = await fetch(`${API_BASE}/documents/cluster`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Clustering failed");
+      if (!data.clustered) {
+        setUploadToast(data.reason || "Not enough documents to cluster", "error");
+      } else {
+        setUploadToast(`Created ${data.clusters} semantic collections`, "success");
+        await openDocsPanel();
+      }
+    } catch (err) {
+      setUploadToast(err.message, "error");
+    } finally {
+      docsClusterBtn.disabled = false;
+      docsClusterBtn.textContent = "Run clustering";
     }
   }
 
@@ -1376,6 +1608,12 @@
     if (e.target === confirmModal) closeConfirmDialog(false);
   });
   docsClose?.addEventListener("click", closeDocsPanel);
+  docsClassifyBtn?.addEventListener("click", classifyAllDocuments);
+  docsClusterBtn?.addEventListener("click", clusterDocuments);
+  docsClearFilterBtn?.addEventListener("click", () => {
+    docsFilter = { category: null, subcategory: null, tag: null, search: "" };
+    openDocsPanel();
+  });
   docsPanel?.addEventListener("click", (e) => {
     if (e.target === docsPanel) closeDocsPanel();
   });

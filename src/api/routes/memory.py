@@ -45,7 +45,13 @@ def start_session(
 @router.post("/memory/session/chat-end", response_model=EndChatResponse)
 def end_chat(req: EndChatRequest, service: RAGPipelineService = Depends(get_rag_service)):
     try:
-        result = service.end_user_chat(req.user_id, req.session_id, req.chat_id, req.chat_compact)
+        result = service.end_user_chat(
+            req.user_id,
+            req.session_id,
+            req.chat_id,
+            req.chat_compact,
+            message_count=req.message_count,
+        )
         return EndChatResponse(
             merged=bool(result.get("merged")),
             session_id=result.get("session_id") or req.session_id,
@@ -62,7 +68,13 @@ def end_chat(req: EndChatRequest, service: RAGPipelineService = Depends(get_rag_
 @router.post("/memory/session/end", response_model=EndSessionResponse)
 def end_session(req: EndSessionRequest, service: RAGPipelineService = Depends(get_rag_service)):
     try:
-        result = service.end_user_session(req.user_id, req.session_id, req.chat_compact)
+        result = service.end_user_session(
+            req.user_id,
+            req.session_id,
+            req.chat_compact,
+            message_count=req.message_count,
+            fallback_summary=req.fallback_summary,
+        )
         return EndSessionResponse(
             archived=bool(result.get("archived")),
             session_id=result.get("session_id") or req.session_id,

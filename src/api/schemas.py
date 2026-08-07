@@ -11,7 +11,7 @@ class IngestRequest(BaseModel):
     source: str = Field(..., description="File path (e.g. Temp-Doc/doc.txt, Docs/file.pdf) or Web URL")
     document_id: Optional[str] = Field(None, description="Optional custom document ID")
     chunking_strategy: Optional[str] = Field("recursive", description="fixed, recursive, semantic, or header")
-    chunk_size: Optional[int] = Field(500, description="Max characters per chunk")
+    chunk_size: Optional[int] = Field(800, description="Max characters per chunk")
     chunk_overlap: Optional[int] = Field(100, description="Overlap characters")
     allowed_roles: Optional[List[str]] = Field(["user", "admin"], description="RBAC allowed roles")
 
@@ -64,12 +64,15 @@ class EndChatRequest(BaseModel):
     session_id: str
     chat_id: str
     chat_compact: str = ""
+    message_count: int = 0
 
 
 class EndSessionRequest(BaseModel):
     user_id: str
     session_id: str
     chat_compact: Optional[str] = ""
+    message_count: int = 0
+    fallback_summary: Optional[str] = None
 
 
 class SessionStartResponse(BaseModel):
@@ -136,12 +139,12 @@ class QueryResponse(BaseModel):
     citations: List[Dict[str, Any]]
     formatted_citations: str
     model: Optional[str]
-    token_usage: Dict[str, int]
+    token_usage: Dict[str, Any]
     latency: Dict[str, float]
     retrieved_chunks_count: int
     reranked_chunks_count: int
     match_percent: float = Field(..., description="Percentage of answer grounded in retrieved documents")
-    mode: str = Field(default="rag", description="rag or direct")
+    mode: str = Field(default="rag", description="rag, direct, or long_document")
     cached: bool = Field(default=False, description="True when served from response cache")
     grounded: bool = Field(default=True, description="True when answer is grounded in documents")
     not_in_documents: bool = Field(default=False, description="True when answer is not from indexed documents")
@@ -152,6 +155,10 @@ class QueryResponse(BaseModel):
     pinned_sources: List[str] = Field(
         default_factory=list,
         description="Pinned document sources to carry into the next turn",
+    )
+    long_document: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Metadata when mode is long_document (sections, strategy)",
     )
 
 

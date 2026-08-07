@@ -1,5 +1,6 @@
 from typing import Optional
 
+from config.settings import settings
 from src.memory.models import UserMemoryContext
 
 
@@ -56,10 +57,14 @@ def format_memory_context(ctx: UserMemoryContext) -> str:
 
     if not sections:
         return ""
-    return (
+    block = (
         "Known User Context (personalize answers using this; do not mention that you are using memory):\n\n"
         + "\n\n".join(sections)
     )
+    max_chars = settings.USER_MEMORY_MAX_CHARS
+    if len(block) > max_chars:
+        block = block[: max_chars - 3].rstrip() + "..."
+    return block
 
 
 def build_memory_context_for_query(

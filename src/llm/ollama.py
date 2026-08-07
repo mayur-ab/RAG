@@ -15,11 +15,19 @@ class OllamaLLMProvider(BaseLLMProvider):
     ):
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self.last_stream_usage: Dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0}
 
     def set_model(self, model: str) -> None:
         if not model or not model.strip():
             raise ValueError("Model name cannot be empty.")
         self.model = model.strip()
+
+    def _llm_options(self, temperature: float, max_tokens: int) -> Dict[str, Any]:
+        return {
+            "temperature": temperature,
+            "num_predict": max_tokens,
+            "num_ctx": settings.OLLAMA_NUM_CTX,
+        }
 
     def _stream_chat(
         self,
@@ -32,7 +40,7 @@ class OllamaLLMProvider(BaseLLMProvider):
             "model": self.model,
             "messages": messages,
             "stream": True,
-            "options": {"temperature": temperature, "num_predict": max_tokens},
+            "options": self._llm_options(temperature, max_tokens),
         }
         with httpx.stream("POST", url, json=payload, timeout=180.0) as response:
             response.raise_for_status()
@@ -44,6 +52,10 @@ class OllamaLLMProvider(BaseLLMProvider):
                 if token:
                     yield token
                 if data.get("done"):
+                    self.last_stream_usage = {
+                        "prompt_tokens": data.get("prompt_eval_count", 0),
+                        "completion_tokens": data.get("eval_count", 0),
+                    }
                     break
 
     def generate(
@@ -73,7 +85,7 @@ class OllamaLLMProvider(BaseLLMProvider):
             "model": self.model,
             "messages": messages,
             "stream": False,
-            "options": {"temperature": temperature, "num_predict": max_tokens},
+            "options": self._llm_options(temperature, max_tokens),
         }
 
         try:
@@ -107,7 +119,8 @@ class OllamaLLMProvider(BaseLLMProvider):
         url = f"{self.base_url}/api/chat"
         messages = [{"role": "system", "content": system_prompt}]
         if chat_history:
-            for turn in chat_history[-20:]:
+            max_turns = settings.MAX_ROUTING_TURNS * 2
+            for turn in chat_history[-max_turns:]:
                 role = turn.get("role")
                 if role in ("user", "assistant"):
                     messages.append({"role": role, "content": turn.get("content", "")})
@@ -116,7 +129,7 @@ class OllamaLLMProvider(BaseLLMProvider):
             "model": self.model,
             "messages": messages,
             "stream": False,
-            "options": {"temperature": temperature, "num_predict": max_tokens},
+            "options": self._llm_options(temperature, max_tokens),
         }
 
         try:
@@ -173,7 +186,8 @@ class OllamaLLMProvider(BaseLLMProvider):
     ) -> Iterator[str]:
         messages = [{"role": "system", "content": system_prompt}]
         if chat_history:
-            for turn in chat_history[-20:]:
+            max_turns = settings.MAX_ROUTING_TURNS * 2
+            for turn in chat_history[-max_turns:]:
                 role = turn.get("role")
                 if role in ("user", "assistant"):
                     messages.append({"role": role, "content": turn.get("content", "")})

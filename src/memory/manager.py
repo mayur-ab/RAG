@@ -103,6 +103,8 @@ class MemoryManager:
         session_id: str,
         chat_id: str,
         chat_compact: str,
+        *,
+        message_count: int = 0,
     ) -> Dict[str, Any]:
         session = self.session_store.get_session(session_id, user_id)
         if not session:
@@ -111,20 +113,22 @@ class MemoryManager:
             return {"merged": False, "reason": "session_not_active"}
 
         compact = (chat_compact or "").strip()
+        had_activity = int(message_count or 0) >= 2
         working = session.get("working_compact") or ""
         if compact:
             working = self.compact_service.merge_into_session(working, compact)
+        count_chat = bool(compact) or had_activity
         self.session_store.update_working_compact(
             session_id,
             user_id,
             working,
-            increment_chat_count=bool(compact),
+            increment_chat_count=count_chat,
         )
         return {
-            "merged": bool(compact),
+            "merged": bool(compact) or had_activity,
             "session_id": session_id,
             "chat_id": chat_id,
-            "chat_count": (session.get("chat_count") or 0) + (1 if compact else 0),
+            "chat_count": (session.get("chat_count") or 0) + (1 if count_chat else 0),
         }
 
     def end_session(
@@ -132,6 +136,9 @@ class MemoryManager:
         user_id: str,
         session_id: str,
         final_chat_compact: Optional[str] = None,
+        *,
+        message_count: int = 0,
+        fallback_summary: Optional[str] = None,
     ) -> Dict[str, Any]:
         session = self.session_store.get_session(session_id, user_id)
         if not session:
@@ -148,11 +155,15 @@ class MemoryManager:
             summary = working.strip()
         if not summary and (final_chat_compact or "").strip():
             summary = final_chat_compact.strip()
+        if not summary and (fallback_summary or "").strip():
+            summary = fallback_summary.strip()
         if not summary:
             chat_count = int(session.get("chat_count") or 0)
-            if chat_count > 0 or (final_chat_compact or "").strip():
+            had_activity = int(message_count or 0) >= 2
+            if chat_count > 0 or had_activity or (final_chat_compact or "").strip():
                 ended = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-                summary = f"Session ended {ended} · {max(chat_count, 1)} chat(s)."
+                effective_count = max(chat_count, 1 if had_activity else 0)
+                summary = f"Session ended {ended} - {effective_count} chat(s)."
             else:
                 self.session_store.archive_session(session_id, user_id, "")
                 return {

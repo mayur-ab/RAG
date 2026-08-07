@@ -159,6 +159,29 @@ def test_memory_manager_session_hierarchy(memory_manager):
     assert profile["recent_sessions"][0]["summary"]
 
 
+def test_end_chat_counts_activity_without_compact(memory_manager):
+    user_id = "activity-user-002"
+    session = memory_manager.start_session(user_id)
+    end_chat = memory_manager.end_chat(
+        user_id,
+        session["session_id"],
+        "chat-no-compact",
+        "",
+        message_count=4,
+    )
+    assert end_chat["merged"] is True
+    assert end_chat["chat_count"] == 1
+
+    archived = memory_manager.end_session(
+        user_id,
+        session["session_id"],
+        message_count=4,
+        fallback_summary="Discussed Duolingo strategy and product roadmap.",
+    )
+    assert archived["archived"] is True
+    assert "Duolingo" in archived["summary"]
+
+
 def test_memory_manager_delete_all_user_data(memory_manager):
     user_id = "delete-user-001"
     memory_manager.capture_user_statement(user_id, "hey my name is mayur", None)

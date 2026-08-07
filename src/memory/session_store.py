@@ -204,7 +204,7 @@ class SessionStore:
                     if not summary:
                         ended = (row["ended_at"] or row["started_at"] or "")[:10]
                         chat_count = int(row["chat_count"] or 0)
-                        summary = f"Session · {chat_count} chat(s)" + (f" · {ended}" if ended else "")
+                        summary = f"Session - {chat_count} chat(s)" + (f" - {ended}" if ended else "")
                     results.append(
                         {
                             "session_id": row["session_id"],

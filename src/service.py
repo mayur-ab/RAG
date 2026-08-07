@@ -87,6 +87,11 @@ from src.memory.episodic_store import EpisodicMemoryStore
 from src.memory.prompt import augment_with_user_memory
 from src.context.conversation_context import ConversationContext
 from src.context.chat_compact import ChatCompactService, build_compact_user_message
+from src.utils.context_budget import build_token_usage
+from src.context.document_request import is_long_document_request
+from src.generation.long_document import LongDocumentGenerator
+from src.classification.metadata_store import DocumentMetadataStore
+from src.classification.service import DocumentClassificationService
 
 
 class RAGPipelineService:
@@ -158,6 +163,15 @@ class RAGPipelineService:
         self._query_cache = QueryCache()
         self._rehydrate_bm25_index()
         self.chat_compact_service = ChatCompactService(self.llm_provider)
+        self.long_document_generator = LongDocumentGenerator(self)
+
+        self.doc_classification: Optional[DocumentClassificationService] = None
+        if settings.ENABLE_DOC_CLASSIFICATION:
+            self.doc_classification = DocumentClassificationService(
+                metadata_store=DocumentMetadataStore(settings.DOC_CLASSIFICATION_DB_PATH),
+                llm_provider=self.llm_provider,
+                embedding_provider=self.embedding_provider,
+            )
 
         self.memory_manager: Optional[MemoryManager] = None
         if settings.ENABLE_USER_MEMORY:
@@ -194,10 +208,34 @@ class RAGPipelineService:
         if self.get_llm_model_name() != requested:
             self.set_llm_model(requested)
 
-    def list_indexed_documents(self) -> List[Dict[str, Any]]:
+    def list_indexed_documents(
+        self,
+        category: Optional[str] = None,
+        subcategory: Optional[str] = None,
+        tag: Optional[str] = None,
+        search: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         if hasattr(self.vector_store, "list_indexed_sources"):
-            return self.vector_store.list_indexed_sources()
-        return []
+            indexed = self.vector_store.list_indexed_sources()
+        else:
+            indexed = []
+        if self.doc_classification:
+            return self.doc_classification.enrich_indexed_documents(
+                indexed,
+                category=category,
+                subcategory=subcategory,
+                tag=tag,
+                search=search,
+            )
+        return indexed
+
+    def _chunk_texts_by_source(self) -> Dict[str, List[str]]:
+        grouped: Dict[str, List[str]] = {}
+        for doc in self._all_chunk_documents:
+            src = doc.metadata.source_path or doc.metadata.source or ""
+            if src:
+                grouped.setdefault(src, []).append(doc.content)
+        return grouped
 
     @staticmethod
     def _normalize_user_id(user_id: Optional[str]) -> Optional[str]:
@@ -210,6 +248,25 @@ class RAGPipelineService:
         if not session_id:
             return None
         return validate_session_id(session_id)
+
+    @staticmethod
+    def _token_usage_from_generation(generation_res: Dict[str, Any], *, log: bool = True) -> Dict[str, Any]:
+        return build_token_usage(
+            generation_res.get("prompt_tokens", 0),
+            generation_res.get("completion_tokens", 0),
+            model=str(generation_res.get("model", "unknown")),
+            log=log,
+        )
+
+    @staticmethod
+    def _stream_generation_result(llm_provider: Any, answer: str, model: str) -> Dict[str, Any]:
+        usage = getattr(llm_provider, "last_stream_usage", None) or {}
+        return {
+            "answer": answer,
+            "model": model,
+            "prompt_tokens": usage.get("prompt_tokens", 0),
+            "completion_tokens": usage.get("completion_tokens") or len(answer.split()),
+        }
 
     @staticmethod
     def build_conversation_context(
@@ -271,7 +328,7 @@ class RAGPipelineService:
             "formatted_citations": "",
             "retrieved_context": "",
             "model": self.get_llm_model_name(),
-            "token_usage": {"prompt_tokens": 0, "completion_tokens": 0},
+            "token_usage": build_token_usage(0, 0, log=False),
             "latency": {
                 "rewrite_seconds": rewrite_latency,
                 "retrieval_seconds": ret_latency,
@@ -423,6 +480,8 @@ class RAGPipelineService:
         session_id: str,
         chat_id: str,
         chat_compact: str,
+        *,
+        message_count: int = 0,
     ) -> Dict[str, Any]:
         if not self.memory_manager:
             return {"merged": False, "reason": "memory_disabled"}
@@ -430,13 +489,18 @@ class RAGPipelineService:
         sid = self._normalize_session_id(session_id)
         if not uid or not sid:
             raise ValueError("Invalid user_id or session_id")
-        return self.memory_manager.end_chat(uid, sid, chat_id, chat_compact)
+        return self.memory_manager.end_chat(
+            uid, sid, chat_id, chat_compact, message_count=message_count
+        )
 
     def end_user_session(
         self,
         user_id: str,
         session_id: str,
         final_chat_compact: Optional[str] = None,
+        *,
+        message_count: int = 0,
+        fallback_summary: Optional[str] = None,
     ) -> Dict[str, Any]:
         if not self.memory_manager:
             return {"archived": False, "reason": "memory_disabled"}
@@ -444,7 +508,13 @@ class RAGPipelineService:
         sid = self._normalize_session_id(session_id)
         if not uid or not sid:
             raise ValueError("Invalid user_id or session_id")
-        return self.memory_manager.end_session(uid, sid, final_chat_compact)
+        return self.memory_manager.end_session(
+            uid,
+            sid,
+            final_chat_compact,
+            message_count=message_count,
+            fallback_summary=fallback_summary,
+        )
 
     def archive_user_session(
         self,
@@ -729,6 +799,19 @@ class RAGPipelineService:
 
         status = "replaced" if existing else "ingested"
         logger.info(f"Ingested '{source}': {len(chunked_docs)} chunks created in {elapsed}s.")
+
+        if self.doc_classification:
+            try:
+                title = raw_docs[0].metadata.title if raw_docs else os.path.basename(source)
+                self.doc_classification.classify_from_chunks(
+                    document_id=raw_docs[0].metadata.document_id if raw_docs else resolved_document_id,
+                    source=normalized_source,
+                    title=title.lstrip("\ufeff").strip() or os.path.basename(source),
+                    chunk_texts=[doc.content for doc in chunked_docs[:12]],
+                )
+            except Exception as exc:
+                logger.warning(f"Document classification failed for '{source}': {exc}")
+
         return {
             "source": source,
             "document_id": raw_docs[0].metadata.document_id if raw_docs else resolved_document_id,
@@ -837,10 +920,7 @@ class RAGPipelineService:
                 "generation": gen_latency,
                 "total": total_latency,
             },
-            token_usage={
-                "prompt_tokens": generation_res.get("prompt_tokens", 0),
-                "completion_tokens": generation_res.get("completion_tokens", 0),
-            },
+            token_usage=self._token_usage_from_generation(generation_res),
             model=generation_res.get("model", "unknown"),
             user_roles=roles,
         )
@@ -853,10 +933,7 @@ class RAGPipelineService:
             "formatted_citations": "",
             "retrieved_context": "",
             "model": generation_res.get("model"),
-            "token_usage": {
-                "prompt_tokens": generation_res.get("prompt_tokens", 0),
-                "completion_tokens": generation_res.get("completion_tokens", 0),
-            },
+            "token_usage": self._token_usage_from_generation(generation_res, log=False),
             "latency": {
                 "rewrite_seconds": 0.0,
                 "retrieval_seconds": 0.0,
@@ -890,6 +967,19 @@ class RAGPipelineService:
 
         if requires_conversation_only(clean_query, conv.routing_turns, conv.chat_compact):
             return self._query_conversation_followup(clean_query, conv, roles, user_id)
+
+        if is_long_document_request(clean_query):
+            logger.info(f"Using hierarchical long-document generation for: {clean_query[:80]}")
+            result = self.long_document_generator.generate(
+                clean_query=clean_query,
+                conv=conv,
+                roles=roles,
+                filter_metadata=filter_metadata,
+                user_id=user_id,
+                top_k=top_k,
+                top_m_rerank=top_m_rerank,
+            )
+            return self._finalize_conversation_result(result, conv, clean_query, result["answer"])
 
         top_k, top_m_rerank = self._retrieval_limits(clean_query, top_k, top_m_rerank)
         max_output_tokens = resolve_max_output_tokens(clean_query)
@@ -959,10 +1049,7 @@ class RAGPipelineService:
                 "generation": gen_latency,
                 "total": total_latency,
             },
-            token_usage={
-                "prompt_tokens": generation_res.get("prompt_tokens", 0),
-                "completion_tokens": generation_res.get("completion_tokens", 0),
-            },
+            token_usage=self._token_usage_from_generation(generation_res),
             model=generation_res.get("model", "unknown"),
             user_roles=roles,
         )
@@ -976,10 +1063,7 @@ class RAGPipelineService:
             "formatted_citations": formatted_citations,
             "retrieved_context": context_str,
             "model": generation_res.get("model"),
-            "token_usage": {
-                "prompt_tokens": generation_res.get("prompt_tokens", 0),
-                "completion_tokens": generation_res.get("completion_tokens", 0),
-            },
+            "token_usage": self._token_usage_from_generation(generation_res, log=False),
             "latency": {
                 "rewrite_seconds": rewrite_latency,
                 "retrieval_seconds": ret_latency,
@@ -1071,7 +1155,7 @@ class RAGPipelineService:
             model = f"mock-chat-llm" if settings.LLM_PROVIDER == "mock" else getattr(self.llm_provider, "model", "unknown")
             if settings.LLM_PROVIDER == "ollama":
                 model = f"ollama/{self.llm_provider.model}"
-            generation_res = {"answer": answer, "model": model, "prompt_tokens": 0, "completion_tokens": len(answer.split())}
+            generation_res = self._stream_generation_result(self.llm_provider, answer, model)
         else:
             generation_res = self.llm_provider.chat(
                 prompt=user_prompt,
@@ -1083,6 +1167,7 @@ class RAGPipelineService:
             yield {"type": "token", "content": answer}
 
         total_latency = round(time.time() - t0, 4)
+        token_usage = self._token_usage_from_generation(generation_res)
         result = {
             "query": clean_query,
             "rewritten_query": None,
@@ -1090,10 +1175,7 @@ class RAGPipelineService:
             "citations": [],
             "formatted_citations": "",
             "model": generation_res.get("model"),
-            "token_usage": {
-                "prompt_tokens": generation_res.get("prompt_tokens", 0),
-                "completion_tokens": generation_res.get("completion_tokens", 0),
-            },
+            "token_usage": token_usage,
             "latency": {
                 "rewrite_seconds": 0.0,
                 "retrieval_seconds": 0.0,
@@ -1133,6 +1215,33 @@ class RAGPipelineService:
             if user_id:
                 self._record_user_query(user_id, clean_query)
             yield {"type": "done", "data": result}
+            return
+
+        if is_long_document_request(clean_query):
+            logger.info(f"Streaming hierarchical long-document generation for: {clean_query[:80]}")
+            result = None
+            for event in self.long_document_generator.generate_stream(
+                clean_query=clean_query,
+                conv=conv,
+                roles=roles,
+                filter_metadata=filter_metadata,
+                user_id=user_id,
+                top_k=top_k,
+                top_m_rerank=top_m_rerank,
+            ):
+                if event.get("type") == "done":
+                    result = self._finalize_conversation_result(
+                        event["data"], conv, clean_query, event["data"]["answer"]
+                    )
+                    yield {"type": "done", "data": result}
+                else:
+                    yield event
+            if result and use_cache:
+                self._query_cache.set(
+                    query, True, model_name, conv.routing_turns, result, user_id, conv.chat_id, conv.chat_compact
+                )
+            if user_id and result:
+                self._record_user_query(user_id, clean_query)
             return
 
         yield {"type": "stage", "stage": "rewriting", "message": "Rewriting question..."}
@@ -1192,7 +1301,7 @@ class RAGPipelineService:
                 yield {"type": "token", "content": token}
             answer = "".join(answer_parts).strip()
             model = f"ollama/{self.llm_provider.model}" if settings.LLM_PROVIDER == "ollama" else "unknown"
-            generation_res = {"answer": answer, "model": model, "prompt_tokens": 0, "completion_tokens": len(answer.split())}
+            generation_res = self._stream_generation_result(self.llm_provider, answer, model)
         else:
             generation_res = self.llm_provider.generate(
                 prompt=clean_query,
@@ -1215,6 +1324,7 @@ class RAGPipelineService:
             context_str,
             citations,
         )
+        token_usage = self._token_usage_from_generation(generation_res)
         result = {
             "query": clean_query,
             "rewritten_query": (topic_anchor.anchored_query or retrieval_query)
@@ -1225,10 +1335,7 @@ class RAGPipelineService:
             "formatted_citations": CitationFormatter.format_citations(citations),
             "retrieved_context": context_str,
             "model": generation_res.get("model"),
-            "token_usage": {
-                "prompt_tokens": generation_res.get("prompt_tokens", 0),
-                "completion_tokens": generation_res.get("completion_tokens", 0),
-            },
+            "token_usage": token_usage,
             "latency": {
                 "rewrite_seconds": 0.0,
                 "retrieval_seconds": 0.0,
@@ -1293,10 +1400,7 @@ class RAGPipelineService:
                 "generation": gen_latency,
                 "total": total_latency,
             },
-            token_usage={
-                "prompt_tokens": generation_res.get("prompt_tokens", 0),
-                "completion_tokens": generation_res.get("completion_tokens", 0),
-            },
+            token_usage=self._token_usage_from_generation(generation_res),
             model=generation_res.get("model", "unknown"),
             user_roles=roles,
         )
@@ -1308,10 +1412,7 @@ class RAGPipelineService:
             "citations": [],
             "formatted_citations": "",
             "model": generation_res.get("model"),
-            "token_usage": {
-                "prompt_tokens": generation_res.get("prompt_tokens", 0),
-                "completion_tokens": generation_res.get("completion_tokens", 0),
-            },
+            "token_usage": self._token_usage_from_generation(generation_res, log=False),
             "latency": {
                 "rewrite_seconds": 0.0,
                 "retrieval_seconds": 0.0,

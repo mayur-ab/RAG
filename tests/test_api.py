@@ -15,6 +15,10 @@ def test_health_endpoint():
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "healthy"
+    assert data["context"]["default_context_tokens"] == 4000
+    assert data["context"]["ollama_num_ctx"] == 32768
+    assert data["context"]["chunk_size_chars"] == 800
+    assert data["retrieval"]["top_k_rerank"] == 5
 
 
 def test_metrics_endpoint():
